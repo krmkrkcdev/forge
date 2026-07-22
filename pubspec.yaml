@@ -1,0 +1,19 @@
+name: forge
+description: Flutter uygulamalarını hızlıca üreten, mağazaya hazırlayan ve yayınlayan komut satırı aracı.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.10.4
+
+executables:
+  forge: forge
+
+dependencies:
+  args: ^2.6.0
+  path: ^1.9.0
+  yaml: ^3.1.2
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6
