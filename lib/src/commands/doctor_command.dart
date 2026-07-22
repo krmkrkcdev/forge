@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:args/command_runner.dart';
 
 import '../checks.dart';
+import '../environment.dart';
 import '../finding.dart';
 import '../project.dart';
 
@@ -32,9 +33,14 @@ class DoctorCommand extends Command<int> {
 
   @override
   int run() {
-    final project = FlutterProject.locate(argResults!['path'] as String);
+    final searchPath = argResults!['path'] as String;
+    final project = FlutterProject.locate(searchPath);
     if (project == null) {
-      stderr.writeln('❌ Flutter projesi bulunamadı (pubspec.yaml yok).');
+      // Aranan yolu yazmak şart: kullanıcı çoğu zaman yanlış dizini verdiğini
+      // ancak bunu görünce fark eder.
+      stderr.writeln('❌ Flutter projesi bulunamadı: '
+          '${Directory(searchPath).absolute.path}');
+      stderr.writeln('   Bu dizinde ve üst dizinlerinde pubspec.yaml yok.');
       return 2;
     }
 
@@ -42,8 +48,9 @@ class DoctorCommand extends Command<int> {
     stdout.writeln('   ${project.root}\n');
 
     final findings = runChecks(project);
+    final environment = runEnvironmentChecks();
 
-    if (findings.isEmpty) {
+    if (findings.isEmpty && environment.isEmpty) {
       stdout.writeln('✅ Hazır. Yayını engelleyen bir bulgu yok.');
       return 0;
     }
@@ -52,13 +59,23 @@ class DoctorCommand extends Command<int> {
       _print(finding);
     }
 
-    final blockers = findings.where((f) => f.severity == Severity.blocker).length;
-    final warnings = findings.where((f) => f.severity == Severity.warning).length;
-    final autoFixable = findings.where((f) => f.autoFixable).length;
+    if (environment.isNotEmpty) {
+      // Proje kusursuz olsa bile yayın araç zincirinde durabilir; bu yüzden
+      // ayrı başlık altında ama aynı çıktının içinde.
+      stdout.writeln('── Ortam ${'─' * 55}\n');
+      for (final finding in environment) {
+        _print(finding);
+      }
+    }
+
+    final all = [...findings, ...environment];
+    final blockers = all.where((f) => f.severity == Severity.blocker).length;
+    final warnings = all.where((f) => f.severity == Severity.warning).length;
+    final autoFixable = all.where((f) => f.autoFixable).length;
 
     stdout.writeln('─' * 64);
     stdout.writeln('$blockers engel, $warnings uyarı, '
-        '${findings.length - blockers - warnings} bilgi.');
+        '${all.length - blockers - warnings} bilgi.');
     if (autoFixable > 0) {
       stdout.writeln('$autoFixable tanesi otomatik düzeltilebilir:  forge fix');
     }
@@ -89,23 +106,37 @@ class DoctorCommand extends Command<int> {
   }
 
   /// Uzun metni terminalde okunur tutar.
+  ///
+  /// Metindeki satır sonları korunur: çözüm metinleri çoğu zaman kopyalanacak
+  /// kod parçası içeriyor ve o satırların bütünlüğü bozulmamalı.
   static String _wrap(String text, {int width = 72, String indent = '          '}) {
-    final words = text.replaceAll('\n', '\n ').split(' ');
-    final buffer = StringBuffer();
-    var lineLength = 0;
-    for (final word in words) {
-      if (word.contains('\n')) {
-        buffer.write('\n$indent${word.replaceAll('\n', '')}');
-        lineLength = word.length;
+    final lines = <String>[];
+
+    for (final paragraph in text.split('\n')) {
+      // Kod satırlarının girintisi anlam taşır; sarmadan aynen aktarılır.
+      if (paragraph.startsWith(' ')) {
+        lines.add(paragraph);
         continue;
       }
-      if (lineLength + word.length > width) {
-        buffer.write('\n$indent');
-        lineLength = 0;
+
+      final buffer = StringBuffer();
+      var lineLength = 0;
+      for (final word in paragraph.split(' ').where((w) => w.isNotEmpty)) {
+        if (lineLength > 0 && lineLength + word.length > width) {
+          lines.add(buffer.toString());
+          buffer.clear();
+          lineLength = 0;
+        }
+        if (lineLength > 0) {
+          buffer.write(' ');
+          lineLength++;
+        }
+        buffer.write(word);
+        lineLength += word.length;
       }
-      buffer.write('$word ');
-      lineLength += word.length + 1;
+      lines.add(buffer.toString());
     }
-    return buffer.toString().trimRight();
+
+    return lines.join('\n$indent');
   }
 }

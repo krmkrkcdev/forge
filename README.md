@@ -48,6 +48,8 @@ seçmek gibi **kararlar size aittir**; araç bunları sizin yerinize vermez.
 
 | Kural | Ciddiyet | Neden var |
 |---|---|---|
+| Sır dosyaları .gitignore'da mı | Engel | Sızan imzalama anahtarı geri alınamaz |
+| iOS imzalama takımı seçili mi | Engel | Takımsız arşiv alınamaz |
 | Sürümde build numarası | Engel | Yayın betiği yoksa hiç başlamaz |
 | Android debug imzalama | Engel | Play Console reddeder |
 | Ana manifestte INTERNET izni | Engel | Ağ yalnızca sürüm derlemesinde çalışmaz |
@@ -61,6 +63,30 @@ seçmek gibi **kararlar size aittir**; araç bunları sizin yerinize vermez.
 | Sürümde düz metin HTTP | Uyarı | Trafik şifresiz gider |
 
 Yeni bir tuzağa düştüğünüzde `lib/src/checks.dart` içine bir kural ekleyin.
+
+### Ortam denetimleri
+
+Proje dosyaları kusursuz olsa bile yayın, kurulu araç zinciri yüzünden
+durabilir. Bu yüzden `forge doctor` çıktısında ayrı bir **Ortam** bölümü var —
+bilinçli olarak ayrı bir komut değil, çünkü ayrı bayrağa konsa tam da
+unutulacağı yerde olurdu.
+
+| Kural | Ciddiyet | Neden var |
+|---|---|---|
+| iOS SDK mağaza eşiğinin üstünde mi | Engel | Eski SDK ile üretilen paket reddedilir |
+| LANG/LC_ALL UTF-8 mi | Uyarı | CocoaPods ve fastlane sebebi anlaşılmaz hatayla çöker |
+
+Apple, kabul ettiği en düşük SDK sürümünü periyodik olarak yükseltir; eşik
+`lib/src/environment.dart` içinde `minimumIosSdkMajor` sabitidir.
+
+## Testler
+
+```bash
+dart test
+```
+
+Mantık içeren kuralların testi vardır: sır sızıntısı denetimi gerçek bir git
+deposu kurup `git check-ignore` davranışını sınar, sahte nesne kullanmaz.
 
 ## Ajan kuralları
 

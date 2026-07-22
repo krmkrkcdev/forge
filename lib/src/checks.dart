@@ -1,3 +1,5 @@
+import 'dart:io' as io;
+
 import 'finding.dart';
 import 'project.dart';
 
@@ -16,6 +18,8 @@ const List<Check> allChecks = [
   _iosPrivacyManifest,
   _iosPrivacyManifestRegistered,
   _iosPermissionStrings,
+  _iosSigningTeam,
+  _secretsNotIgnored,
   _bundleIdMatch,
   _defaultBundleId,
   _launcherIcon,
@@ -258,7 +262,112 @@ Finding? _iosPermissionStrings(FlutterProject p) {
   );
 }
 
+Finding? _iosSigningTeam(FlutterProject p) {
+  if (!p.hasIos) return null;
+  final pbxproj = p.read('ios/Runner.xcodeproj/project.pbxproj');
+  if (pbxproj == null) return null;
+
+  if (pbxproj.contains('DEVELOPMENT_TEAM')) return null;
+
+  return const Finding(
+    id: 'ios-no-development-team',
+    severity: Severity.blocker,
+    platform: Platform.ios,
+    title: 'Xcode projesinde imzalama takımı (DEVELOPMENT_TEAM) tanımlı değil',
+    why: 'Takım seçilmeden provisioning profile üretilemez, dolayısıyla arşiv '
+        'de alınamaz. Xcode arayüzünde sarı bir uyarı olarak görünür ve '
+        'kolayca gözden kaçar; yayın betiği ise anlaşılması güç bir imzalama '
+        'hatasıyla durur.',
+    fix: 'Xcode\'da Runner hedefi → Signing & Capabilities → Team seçin. '
+        'Takım listesi boşsa Apple Developer Program üyeliğinizin etkin ve '
+        'güncel sözleşmelerin kabul edilmiş olduğunu doğrulayın '
+        '(developer.apple.com/terms).',
+  );
+}
+
 // ------------------------------------------------------------------- ortak
+
+/// Korunması gereken bir sır dosyası türü.
+class SecretKind {
+  const SecretKind(this.probe, this.label, this.pattern);
+
+  /// Git'e sorulacak yol. Dosyanın var olması GEREKMEZ — `git check-ignore`
+  /// saf yol eşleştirmesi yapar.
+  final String probe;
+
+  /// Kullanıcıya gösterilen ad.
+  final String label;
+
+  /// .gitignore'a yazılacak desen.
+  final String pattern;
+}
+
+/// Anahtar dosyaları çoğu zaman .gitignore yazıldıktan SONRA yerine konur.
+/// Bu yüzden var olan dosyalara değil desenlere bakıyoruz: açık kapıyı,
+/// içeri bir şey girmeden önce fark etmek gerek.
+const List<SecretKind> secretKinds = [
+  SecretKind('ios/fastlane/AuthKey_FORGEPROBE.p8',
+      'App Store Connect API anahtarı (.p8)', '*.p8'),
+  SecretKind('android/fastlane/play-store-credentials.json',
+      'Google Play servis hesabı anahtarı', '**/fastlane/play-store-credentials.json'),
+  SecretKind('.env', 'Ortam değişkenleri (.env)', '.env'),
+  SecretKind('android/key.properties', 'Android imzalama parolaları', 'key.properties'),
+  SecretKind('android/app/upload-keystore.jks', 'Android anahtar deposu', '*.jks'),
+  SecretKind('android/app/upload.keystore', 'Android anahtar deposu (.keystore)',
+      '*.keystore'),
+];
+
+/// Git tarafından yok sayılmayan sır türleri.
+///
+/// Proje bir git deposu içinde değilse ya da git kurulu değilse `null` —
+/// denetim yapılamadı demektir, "sorun yok" demek değil.
+List<SecretKind>? unprotectedSecrets(FlutterProject p) {
+  final unprotected = <SecretKind>[];
+
+  for (final kind in secretKinds) {
+    final io.ProcessResult result;
+    try {
+      result = io.Process.runSync(
+        'git',
+        ['check-ignore', '-q', kind.probe],
+        workingDirectory: p.root,
+      );
+    } on io.ProcessException {
+      return null; // git kurulu değil.
+    }
+    // 0: yok sayılıyor, 1: sayılmıyor, 128: git deposu değil.
+    if (result.exitCode == 128) return null;
+    if (result.exitCode == 1) unprotected.add(kind);
+  }
+
+  return unprotected;
+}
+
+Finding? _secretsNotIgnored(FlutterProject p) {
+  final unprotected = unprotectedSecrets(p);
+  if (unprotected == null || unprotected.isEmpty) return null;
+
+  final labels = unprotected.map((k) => k.label).toSet().join(', ');
+  final patterns = unprotected.map((k) => '  ${k.pattern}').toSet().join('\n');
+
+  return Finding(
+    id: 'secrets-not-ignored',
+    severity: Severity.blocker,
+    platform: Platform.both,
+    title: 'Sır dosyaları .gitignore ile korunmuyor: $labels',
+    why: 'Bu dosyalar depoya girerse imzalama anahtarlarınız ve mağaza '
+        'erişim bilgileriniz açığa çıkar. Depo özel olsa bile geri alınamaz: '
+        'git geçmişinden silinse dahi anahtarların iptal edilip yeniden '
+        'üretilmesi gerekir. Üstelik dosyalar çoğu zaman .gitignore '
+        'yazıldıktan sonra yerine konduğu için açık, bir şey sızana kadar '
+        'fark edilmez.',
+    fix: '.gitignore dosyasına ekleyin:\n'
+        '$patterns\n'
+        'Doğrulamak için:  git check-ignore -v <dosya>',
+    autoFixable: true,
+  );
+}
+
 
 Finding? _bundleIdMatch(FlutterProject p) {
   final android = p.androidApplicationId;

@@ -67,6 +67,8 @@ class FixCommand extends Command<int> {
         return _fixExportCompliance(project, dryRun);
       case 'android-internet-permission':
         return _fixInternetPermission(project, dryRun);
+      case 'secrets-not-ignored':
+        return _fixSecretsIgnore(project, dryRun);
       default:
         return null;
     }
@@ -109,6 +111,31 @@ class FixCommand extends Command<int> {
 
     if (!dryRun) file.writeAsStringSync(updated);
     return 'Info.plist içine ITSAppUsesNonExemptEncryption=false eklendi';
+  }
+
+  /// Eksik sır desenlerini projenin .gitignore dosyasına ekler.
+  ///
+  /// Deponun kökündeki .gitignore'a değil, projenin kendi dizinindekine
+  /// yazıyoruz: git iç içe .gitignore dosyalarına saygı duyar ve forge'un
+  /// denetlediği sınırın dışına çıkmamak gerekir.
+  String? _fixSecretsIgnore(FlutterProject project, bool dryRun) {
+    final missing = unprotectedSecrets(project);
+    if (missing == null || missing.isEmpty) return null;
+
+    final file = File(project.path('.gitignore'));
+    final existing = file.existsSync() ? file.readAsStringSync() : '';
+    final patterns = missing.map((k) => k.pattern).toSet().toList();
+
+    final buffer = StringBuffer(existing);
+    if (existing.isNotEmpty && !existing.endsWith('\n')) buffer.write('\n');
+    buffer.write('\n# Sırlar — asla depoya girmemeli (forge fix)\n');
+    for (final pattern in patterns) {
+      buffer.writeln(pattern);
+    }
+
+    if (!dryRun) file.writeAsStringSync(buffer.toString());
+    return '.gitignore içine ${patterns.length} sır deseni eklendi '
+        '(${patterns.join(", ")})';
   }
 
   String? _fixInternetPermission(FlutterProject project, bool dryRun) {
