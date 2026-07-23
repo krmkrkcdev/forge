@@ -11,6 +11,7 @@ typedef EnvCheck = Finding? Function();
 
 const List<EnvCheck> allEnvironmentChecks = [
   _iosSdkVersion,
+  _distributionCertificate,
   _utf8Locale,
 ];
 
@@ -65,6 +66,33 @@ Finding? _iosSdkVersion() {
         'genellikle daha yeni bir macOS ister; önce işletim sistemini '
         'yükseltmeniz gerekebilir. Xcode 16 ve sonrasında simülatör '
         'çalışma zamanları ayrı indirilir: Settings → Components.',
+  );
+}
+
+Finding? _distributionCertificate() {
+  if (!io.Platform.isMacOS) return null;
+
+  final identities = _run('security', ['find-identity', '-v', '-p', 'codesigning']);
+  if (identities == null) return null;
+
+  if (identities.contains('Apple Distribution') ||
+      identities.contains('iPhone Distribution')) {
+    return null;
+  }
+
+  return const Finding(
+    id: 'ios-no-distribution-certificate',
+    severity: Severity.blocker,
+    platform: Platform.ios,
+    title: 'Apple Distribution sertifikası yok',
+    why: 'Mağaza yüklemesi dağıtım kimliği ister. Sertifika yoksa arşiv '
+        'geliştirme kimliğiyle imzalanır ve paketleme "no provisioning '
+        'profile mapping was provided" hatasıyla durur. Bu mesaj gerçek '
+        'sebebi söylemediği için teşhisi zordur; üstelik hatayı ancak tam '
+        'bir derleme turunu harcadıktan sonra görürsünüz.',
+    fix: 'Xcode → Settings → Accounts → hesabınızı seçin → Manage '
+        'Certificates → sol alt "+" → Apple Distribution. Yalnızca bir kez '
+        'yapılır.',
   );
 }
 

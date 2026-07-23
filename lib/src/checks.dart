@@ -19,6 +19,7 @@ const List<Check> allChecks = [
   _iosPrivacyManifestRegistered,
   _iosPermissionStrings,
   _iosSigningTeam,
+  _iosIpadOrientations,
   _secretsNotIgnored,
   _bundleIdMatch,
   _defaultBundleId,
@@ -282,6 +283,47 @@ Finding? _iosSigningTeam(FlutterProject p) {
         'Takım listesi boşsa Apple Developer Program üyeliğinizin etkin ve '
         'güncel sözleşmelerin kabul edilmiş olduğunu doğrulayın '
         '(developer.apple.com/terms).',
+  );
+}
+
+Finding? _iosIpadOrientations(FlutterProject p) {
+  if (!p.hasIos) return null;
+  final plist = p.iosInfoPlist;
+  if (plist == null) return null;
+
+  // iPad hedeflenmiyorsa kural geçerli değil.
+  final pbxproj = p.read('ios/Runner.xcodeproj/project.pbxproj') ?? '';
+  if (!pbxproj.contains('TARGETED_DEVICE_FAMILY = "1,2"')) return null;
+
+  // ~ipad dizisi dört yönü de içeriyorsa çoklu görev şartı zaten sağlanıyor.
+  final ipadBlock = RegExp(
+    r'UISupportedInterfaceOrientations~ipad</key>\s*<array>(.*?)</array>',
+    dotAll: true,
+  ).firstMatch(plist)?.group(1);
+  if (ipadBlock == null) return null;
+
+  final hasLandscape = ipadBlock.contains('LandscapeLeft') &&
+      ipadBlock.contains('LandscapeRight');
+  if (hasLandscape) return null;
+
+  // Yatay yön beyan edilmemişse çoklu görev kapatılmış olmalı.
+  if (plist.contains('UIRequiresFullScreen')) return null;
+
+  return const Finding(
+    id: 'ios-ipad-orientation-mismatch',
+    severity: Severity.blocker,
+    platform: Platform.ios,
+    title: 'iPad yön beyanı eksik ve UIRequiresFullScreen yok',
+    why: 'Uygulama iPad\'i hedefliyor ama iPad için yatay yönleri beyan '
+        'etmiyor. iPad\'de çoklu görev (Split View) destekleyen uygulamalar '
+        'dört yönü de beyan etmek zorundadır. App Store Connect yüklemeyi '
+        '90474 hatasıyla REDDEDER — ve bunu ancak derleme, imzalama ve '
+        'yükleme turunu tamamen harcadıktan sonra öğrenirsiniz.',
+    fix: 'Uygulamanın yatay düzeni yoksa Info.plist içine ekleyin:\n'
+        '  <key>UIRequiresFullScreen</key><true/>\n'
+        'Yatay düzeni destekleyecekseniz onun yerine ~ipad dizisine '
+        'LandscapeLeft ve LandscapeRight ekleyin. Üçüncü seçenek: iPad\'i '
+        'hedeflemeyi bırakmak (TARGETED_DEVICE_FAMILY = "1").',
   );
 }
 

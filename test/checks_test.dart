@@ -98,6 +98,89 @@ void main() {
     });
   });
 
+  group('ios-ipad-orientation-mismatch', () {
+    /// iPad hedefleyen, verilen ~ipad yönlerine sahip bir proje kurar.
+    void writeIosProject({
+      required String deviceFamily,
+      required List<String> ipadOrientations,
+      bool requiresFullScreen = false,
+    }) {
+      fixture.write(
+        'ios/Runner.xcodeproj/project.pbxproj',
+        'DEVELOPMENT_TEAM = 26BTDFQ8VY;\n'
+        'TARGETED_DEVICE_FAMILY = "$deviceFamily";\n',
+      );
+      final orientations =
+          ipadOrientations.map((o) => '\t\t<string>$o</string>').join('\n');
+      fixture.write(
+        'ios/Runner/Info.plist',
+        '<plist><dict>\n'
+        '\t<key>UISupportedInterfaceOrientations~ipad</key>\n'
+        '\t<array>\n$orientations\n\t</array>\n'
+        '${requiresFullScreen ? '\t<key>UIRequiresFullScreen</key><true/>\n' : ''}'
+        '</dict></plist>\n',
+      );
+    }
+
+    test('iPad hedeflenip yatay yön yoksa ve tam ekran beyanı da yoksa engel', () {
+      writeIosProject(
+        deviceFamily: '1,2',
+        ipadOrientations: [
+          'UIInterfaceOrientationPortrait',
+          'UIInterfaceOrientationPortraitUpsideDown',
+        ],
+      );
+
+      final finding =
+          findingWithId(fixture.project, 'ios-ipad-orientation-mismatch');
+      expect(finding, isNotNull);
+      expect(finding!.severity, Severity.blocker);
+    });
+
+    test('UIRequiresFullScreen varsa sessiz kalır', () {
+      writeIosProject(
+        deviceFamily: '1,2',
+        ipadOrientations: ['UIInterfaceOrientationPortrait'],
+        requiresFullScreen: true,
+      );
+
+      expect(
+        findingWithId(fixture.project, 'ios-ipad-orientation-mismatch'),
+        isNull,
+      );
+    });
+
+    test('dört yön de beyan edilmişse sessiz kalır', () {
+      writeIosProject(
+        deviceFamily: '1,2',
+        ipadOrientations: [
+          'UIInterfaceOrientationPortrait',
+          'UIInterfaceOrientationPortraitUpsideDown',
+          'UIInterfaceOrientationLandscapeLeft',
+          'UIInterfaceOrientationLandscapeRight',
+        ],
+      );
+
+      expect(
+        findingWithId(fixture.project, 'ios-ipad-orientation-mismatch'),
+        isNull,
+      );
+    });
+
+    test('iPad hedeflenmiyorsa kural geçerli değil', () {
+      // Yalnızca iPhone hedefleyen uygulamada çoklu görev şartı yok.
+      writeIosProject(
+        deviceFamily: '1',
+        ipadOrientations: ['UIInterfaceOrientationPortrait'],
+      );
+
+      expect(
+        findingWithId(fixture.project, 'ios-ipad-orientation-mismatch'),
+        isNull,
+      );
+    });
+  });
+
   group('ios-no-development-team', () {
     test('iOS klasörü yoksa sessiz kalır', () {
       expect(findingWithId(fixture.project, 'ios-no-development-team'), isNull);
