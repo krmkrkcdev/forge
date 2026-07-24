@@ -19,9 +19,14 @@ include: package:lints/recommended.yaml
 #   rules:
 #     - camel_case_types
 
-# analyzer:
-#   exclude:
-#     - path/to/excluded/files/**
+analyzer:
+  exclude:
+    # Şablonlar Flutter kodudur ve içinde {{YER_TUTUCU}} geçer; bu paketin
+    # (saf Dart) analiz kapsamına girmezler. Doğrulukları `forge new` ile
+    # üretilen gerçek projede `flutter analyze` çalıştırılarak sınanır.
+    - assets/template/**
+    # Üretilmiş dosya; kaynağı assets/template/ altındadır.
+    - lib/src/templates/bundle.dart
 
 # For more information about the core and recommended set of lints, see
 # https://dart.dev/go/core-lints

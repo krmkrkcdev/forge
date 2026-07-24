@@ -1,0 +1,8 @@
+Bu dosyayı "release_notes.txt" olarak kopyalayın ve her sürümde güncelleyin.
+Buradaki metin Play Store'da sürüm notu (changelog) olarak görünür.
+Play Store sınırı: en fazla 500 karakter.
+
+Örnek:
+- Giriş ekranındaki donma sorunu giderildi
+- Bildirim ayarları yeniden düzenlendi
+- Genel performans iyileştirmeleri

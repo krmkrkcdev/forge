@@ -1,0 +1,22 @@
+# fastlane match yapılandırması
+#
+# match, iOS imzalama sertifikalarını ve provisioning profillerini ŞİFRELİ olarak
+# özel bir git deposunda saklar. Böylece imzalama:
+#   - her makinede aynı şekilde çalışır (Xcode'un "otomatik yönetimi"ne bağlı kalmaz)
+#   - ileride CI'a (GitHub Actions) taşınabilir
+#   - sertifika süresi dolduğunda tek komutla yenilenir
+#
+# Değerler .env dosyasından okunur.
+
+git_url(ENV["MATCH_GIT_URL"])
+storage_mode("git")
+
+type("appstore")
+
+app_identifier([ENV["APP_IDENTIFIER"]])
+team_id(ENV["APPLE_TEAM_ID"])
+
+# Normal yayın akışında yeni sertifika ÜRETİLMEZ, sadece mevcutlar indirilir.
+# Sertifika oluşturma/yenileme bilinçli olarak elle yapılır:
+#   cd ios && bundle exec fastlane match appstore
+readonly(true)

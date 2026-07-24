@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Apple gizlilik manifesti.
+
+  Apple, Mayıs 2024'ten beri "belirli gerekçe gerektiren API"leri kullanan
+  uygulamalarda bu dosyayı zorunlu tutuyor. Eksikse App Store Connect önce
+  uyarı gönderir, sonra reddeder.
+
+  DİKKAT: Bu dosya Apple'ın kullanıcıya gösterdiği gizlilik etiketini
+  ÜRETMEZ. Etiket App Store Connect'teki gizlilik anketinden üretilir. İkisi
+  TUTARSIZ olursa inceleme reddedilir. Buraya bir satır eklediğinizde ankete
+  de eklemeniz gerekir.
+
+  Uygulamaya veri toplayan yeni bir özellik ya da SDK eklendiğinde bu dosya
+  güncellenmelidir.
+-->
+<plist version="1.0">
+<dict>
+	<!-- İzleme (ATT) yapılmıyor: reklamlar kişiselleştirilmiyor.
+	     app_tracking_transparency ekleyip izin isterseniz bu değer true
+	     olmalı ve Info.plist'e NSUserTrackingUsageDescription eklenmelidir. -->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array>
+		<!-- Reklam SDK'sı (google_mobile_ads) cihaz kimliği ve reklam
+		     etkileşimi toplar. SDK kendi manifestini de sunar; burada
+		     yinelenmesi App Store Connect anketiyle aynı hikâyeyi anlatmak
+		     içindir. -->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeDeviceID</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeThirdPartyAdvertising</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeAdvertisingData</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeThirdPartyAdvertising</string>
+			</array>
+		</dict>
+	</array>
+
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<!-- shared_preferences → NSUserDefaults -->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

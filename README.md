@@ -15,6 +15,47 @@ Ardından `forge` komutu her yerde çalışır. (`~/.pub-cache/bin` PATH'te olma
 
 ## Komutlar
 
+### `forge new`
+
+Mağazaya hazır bir proje üretir.
+
+```bash
+forge new not_defteri --org com.sirketiniz --app-name "Not Defteri"
+```
+
+`flutter create` iyi bir başlangıç noktası verir ama mağazaya hazır bir proje
+vermez: sürüm derlemesi debug anahtarıyla imzalanır, ana manifestte INTERNET
+izni yoktur, gizlilik manifesti yoktur, yayın akışı yoktur. `forge new`
+aradaki farkı kapatır.
+
+Üretilen yapı:
+
+```
+not_defteri/
+  AGENTS.md               ajan kuralları
+  docs/REKLAM.md          reklam standardı
+  .gitignore              sır desenleri dahil
+  app/
+    deploy.sh             yayın akışı (+ fastlane yapılandırması)
+    .env.example
+    lib/services/ad_service.dart      ← her uygulamada AYNI
+    lib/widgets/banner_ad_slot.dart   ← her uygulamada AYNI
+    ios/Runner/PrivacyInfo.xcprivacy  (Xcode projesine kayıtlı)
+    android/key.properties.example
+```
+
+Üretilen projede `forge doctor` **sıfır engelle** çıkar. Geriye kalan
+uyarılar bilinçli olarak sizin kararınız olan şeylerdir: imzalama anahtarı,
+uygulama ikonu ve gerçek AdMob kimlikleri.
+
+| Seçenek | Anlamı |
+|---|---|
+| `--org` | Ters alan adı. **Zorunlu** — paket kimliği bundan türer ve yayınlandıktan sonra değişmez. |
+| `--app-name` | Kullanıcının gördüğü ad. Verilmezse proje adından türetilir. |
+| `--path` | Hedef dizin. Varsayılan `./<ad>`. |
+| `--no-pub-add` | Bağımlılıkları eklemez (ağsız ortam). |
+| `--no-git` | Depo başlatmaz. |
+
 ### `forge doctor`
 
 Projeyi App Store ve Play Store yayınına hazır mı diye denetler.
@@ -56,13 +97,25 @@ seçmek gibi **kararlar size aittir**; araç bunları sizin yerinize vermez.
 | iOS izin açıklamaları | Engel | Uygulama çalışma anında çöker |
 | Varsayılan `com.example` kimliği | Engel | Mağazalar kabul etmez |
 | PrivacyInfo Xcode'a kayıtlı mı | Engel | Dosya pakete girmez, sessizce işe yaramaz |
+| AdMob uygulama kimliği eksik | Engel | Reklam SDK'sı açılışta uygulamayı çökertir |
+| iPad yön beyanı tutarsızlığı | Engel | Yükleme 90474 hatasıyla reddedilir |
+| `NSUserTrackingUsageDescription` | Engel | ATT izni isteyen uygulama çalışma anında çöker |
 | `ITSAppUsesNonExemptEncryption` | Uyarı | Her yüklemede elle soru |
 | `PrivacyInfo.xcprivacy` varlığı | Uyarı | Apple zorunlu tutuyor |
 | Paket kimliği tutarlılığı | Uyarı | Derin bağlantı ve analitikte karışıklık |
 | Özel uygulama ikonu | Uyarı | İnceleme reddi riski |
+| İkon kaynak görselinin varlığı | Uyarı | Yapılandırma var, üretim hiç çalışmamış |
 | Sürümde düz metin HTTP | Uyarı | Trafik şifresiz gider |
+| AdMob **test** uygulama kimliği | Uyarı | Uygulama çalışır, gelir sıfırdır — geri bildirim vermeyen hata |
+| Reklam onayı (UMP) hiç istenmiyor | Uyarı | AB'de reklam sunulmaz, politika ihlali |
+| `SKAdNetworkItems` eksikliği | Uyarı | Yükleme ilişkilendirilemez, eCPM düşer |
+| Gizlilik manifesti reklamdan söz etmiyor | Uyarı | Beyan gerçekle uyuşmaz, red sebebi |
 
 Yeni bir tuzağa düştüğünüzde `lib/src/checks.dart` içine bir kural ekleyin.
+
+Üretim yayınında (`./deploy.sh <platform> release`) uyarılar da engel
+sayılır. Beta'da sayılmaz: TestFlight'a test reklam kimliğiyle çıkmak
+meşrudur, mağazaya çıkmak değildir.
 
 ### Ortam denetimleri
 
@@ -88,12 +141,36 @@ dart test
 Mantık içeren kuralların testi vardır: sır sızıntısı denetimi gerçek bir git
 deposu kurup `git check-ignore` davranışını sınar, sahte nesne kullanmaz.
 
+## Şablonlar
+
+`assets/template/` altındaki dosyalar `forge new`'ün ürettiği projenin
+kaynağıdır. Orada düzenlenir; sonra koda gömülür:
+
+```bash
+dart run tool/bundle_assets.dart
+```
+
+Gömme adımı gerekli çünkü küresel olarak kurulan `forge` bir anlık
+görüntüdür ve yanındaki `assets/` dizinini güvenilir biçimde bulamaz.
+Adımı unutursanız `dart test` yakalar.
+
+Şablonun içinde iki dosya özeldir — **her uygulamada aynıdır** ve uygulama
+başına değiştirilmez:
+
+```
+lib/services/ad_service.dart
+lib/widgets/banner_ad_slot.dart
+```
+
+Reklam kuralları (biçimler, yerleşim, sıklık, onay akışı, mağaza beyanları)
+`assets/template/docs/REKLAM.md` içinde bir kez karara bağlanmıştır.
+Değişiklik uygulamaya değil, standarda yapılır.
+
 ## Ajan kuralları
 
-`assets/AGENTS.md.template`, projelerinizde çalışan yapay zekâ ajanları için
+`assets/template/AGENTS.md`, projelerinizde çalışan yapay zekâ ajanları için
 hazır bir kural dosyasıdır: mimari ilkeler, doğrulama adımları, yayın akışı ve
-bilinen tuzaklar. Yeni projeye kopyalayıp `{{APP_NAME}}` yerine uygulama adını
-yazın.
+bilinen tuzaklar. `forge new` bunu projeye kendisi koyar.
 
 Önemli kural: **ajan mağazaya yükleme yapmaz.** Geri alınamaz ve dışa dönük
 bir işlemdir; gerçek yüklemeyi insan başlatır.
@@ -102,6 +179,8 @@ bir işlemdir; gerçek yüklemeyi insan başlatır.
 
 - [x] `forge doctor` — mağaza hazırlık denetimi
 - [x] `forge fix` — otomatik düzeltmeler
-- [ ] `forge new` — Flutter + FastAPI + Docker + deploy iskeleti üretimi
+- [x] `forge new` — mağazaya hazır proje iskeleti
+- [ ] `forge new --backend` — FastAPI + PostgreSQL + Docker katmanı
 - [ ] `forge release` — deploy.sh sarmalayıcısı
 - [ ] `forge icon` — tek görselden ikon ve açılış ekranı üretimi
+- [ ] `forge screenshots` — mağaza ekran görüntülerini simülatörden üretme

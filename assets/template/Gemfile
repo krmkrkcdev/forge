@@ -1,0 +1,5 @@
+source "https://rubygems.org"
+
+# Sürüm aralığı sabitlendi: fastlane'in ana sürüm atlamaları zaman zaman
+# kırıcı değişiklik getiriyor. Güncellemek için: bundle update fastlane
+gem "fastlane", "~> 2.220"

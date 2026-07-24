@@ -1,0 +1,165 @@
+default_platform(:ios)
+
+# Build numarası tek bir yerden yönetilir: pubspec.yaml.
+# `flutter build ios` komutu bu değeri Generated.xcconfig içine
+# CURRENT_PROJECT_VERSION olarak yazar; burada TEKRAR artırmıyoruz.
+# (Eski sürümdeki increment_build_number, pubspec ile Xcode numarasını
+#  sürekli birbirinden kaydırıyordu.)
+
+APP_ID = ENV["APP_IDENTIFIER"]
+
+platform :ios do
+
+  desc "App Store Connect API Key ile kimlik doğrulama (2FA gerektirmez)"
+  private_lane :auth do
+    app_store_connect_api_key(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key_filepath: ENV.fetch("ASC_KEY_FILEPATH"),
+      duration: 1200,
+      in_house: false
+    )
+  end
+
+  # match kurulu mu? (.env içinde MATCH_GIT_URL tanımlıysa kurulu sayılır)
+  # Kurulu değilse Xcode'un otomatik imzalamasına düşeriz — çalışır ama
+  # yalnızca bu Mac'te, ve CI'a taşınamaz.
+  private_lane :match_enabled do
+    !ENV["MATCH_GIT_URL"].to_s.empty?
+  end
+
+  desc "İmzalama sertifikalarını match ile hazırla"
+  private_lane :prepare_signing do
+    unless match_enabled
+      UI.important("match kurulu değil (MATCH_GIT_URL boş) — profil doğrudan")
+      UI.important("App Store Connect'ten alınacak. Bu makineye özeldir;")
+      UI.important("CI'a taşımak için README'deki match kurulumuna bakın.")
+
+      # Xcode'un otomatik imzalaması komut satırından çalışırken App Store
+      # DAĞITIM profilini kendiliğinden üretmiyor; arşivi geliştirme
+      # kimliğiyle imzalıyor ve paketleme "no provisioning profile mapping"
+      # ile düşüyor. Profili burada açıkça alıp imzalamayı ona sabitliyoruz.
+      sigh(app_identifier: APP_ID, force: true)
+
+      update_code_signing_settings(
+        use_automatic_signing: false,
+        path: "Runner.xcodeproj",
+        team_id: ENV.fetch("APPLE_TEAM_ID"),
+        code_sign_identity: "Apple Distribution",
+        bundle_identifier: APP_ID,
+        profile_name: lane_context[SharedValues::SIGH_NAME],
+      )
+      next
+    end
+
+    # readonly: Matchfile'da true — burada sertifika üretilmez, sadece indirilir.
+    match(type: "appstore")
+
+    # Projeyi manuel imzalamaya çevir ki gym match'in profilini kullansın.
+    # DİKKAT: bu Runner.xcodeproj dosyasını değiştirir (bkz. README).
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: "Runner.xcodeproj",
+      team_id: ENV["APPLE_TEAM_ID"],
+      code_sign_identity: "Apple Distribution",
+      bundle_identifier: APP_ID,
+      profile_name: lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING][APP_ID]
+    )
+  end
+
+  desc "Arşivi üret (Dart derlemesi deploy.sh içindeki flutter build ile zaten yapıldı)"
+  private_lane :archive do
+    options = {
+      workspace: "Runner.xcworkspace",
+      scheme: "Runner",
+      export_method: "app-store",
+      silent: true,
+      # clean: false -> flutter build ios çıktısını yeniden derlemeyi önler.
+      # Eski sürümdeki clean: true iOS build süresini iki katına çıkarıyordu.
+      clean: false
+    }
+
+    if match_enabled
+      options[:export_options] = {
+        provisioningProfiles: {
+          APP_ID => lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING][APP_ID]
+        }
+      }
+    else
+      # prepare_signing içinde sigh ile alınan profil.
+      options[:export_options] = {
+        provisioningProfiles: {
+          APP_ID => lane_context[SharedValues::SIGH_NAME],
+        },
+      }
+    end
+
+    build_app(options)
+  end
+
+  desc "Sürüm notu: --notes bayrağı > release_notes.txt > varsayılan metin"
+  private_lane :release_notes do
+    # deploy.sh --notes="..." ile verilen metin her şeyin önüne geçer:
+    # her yükleme için dosya düzenlemek zorunda kalmamak içindir.
+    from_flag = ENV["DEPLOY_RELEASE_NOTES"].to_s.strip
+    if from_flag.empty?
+      path = File.join(Dir.pwd, "release_notes.txt")
+      File.exist?(path) ? File.read(path).strip : "Hata düzeltmeleri ve iyileştirmeler."
+    else
+      from_flag
+    end
+  end
+
+  desc "TestFlight'a hızlı yükleme (beta test)"
+  lane :beta do
+    auth
+    prepare_signing
+    archive
+
+    if ENV["DEPLOY_DRY_RUN"] == "true"
+      UI.important("DRY-RUN: arşiv üretildi, TestFlight'a yükleme atlandı.")
+      next
+    end
+
+    upload_to_testflight(
+      skip_waiting_for_build_processing: true,
+      changelog: release_notes
+    )
+  end
+
+  desc "App Store'a yükle ve otomatik incelemeye gönder"
+  lane :release do
+    auth
+    prepare_signing
+    archive
+
+    if ENV["DEPLOY_DRY_RUN"] == "true"
+      UI.important("DRY-RUN: arşiv üretildi, App Store'a yükleme atlandı.")
+      next
+    end
+
+    upload_to_app_store(
+      submit_for_review: true,
+      automatic_release: true,
+      force: true,
+      # Metadata/ekran görüntüsü klasörleri bu pakette yok; yüklemeye
+      # kalkarsa deliver hata verir veya mağaza metnini boşaltır.
+      # Metadata'yı da yönetmek isterseniz `fastlane deliver init` ile
+      # fastlane/metadata klasörünü oluşturup skip_metadata: false yapın.
+      skip_screenshots: true,
+      skip_metadata: true,
+      precheck_include_in_app_purchases: false,
+      submission_information: {
+        add_id_info_uses_idfa: false
+      }
+    )
+  end
+
+  desc "Sertifikaları OLUŞTUR / YENİLE (tek seferlik veya sertifika bittiğinde)"
+  lane :certs do
+    auth
+    match(type: "appstore", readonly: false)
+    UI.success("Sertifikalar hazır ve şifreli olarak git deposuna kaydedildi.")
+  end
+
+end

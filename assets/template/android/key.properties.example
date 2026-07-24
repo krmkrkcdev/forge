@@ -1,0 +1,18 @@
+# Bu dosyayi "key.properties" olarak kopyalayin ve kendi degerlerinizle
+# doldurun. key.properties ve .jks dosyasi git'e GIRMEZ.
+#
+# 1) Anahtar deposunu bir kez uretin (parolayi siz belirleyin):
+#
+#    keytool -genkey -v -keystore ~/{{PROJECT_NAME}}-release.jks \
+#      -keyalg RSA -keysize 2048 -validity 10000 -alias {{PROJECT_NAME}}
+#
+# 2) Uretilen .jks dosyasini ve bu dosyayi guvenli bir yerde YEDEKLEYIN.
+#    Kaybederseniz uygulamanin guncellemesini Play Store'a bir daha
+#    yukleyemezsiniz — yeni bir uygulama kaydi acmak zorunda kalirsiniz.
+#    (Play App Signing acikken yalnizca yukleme anahtari degistirilebilir,
+#     bunun icin Google'a basvurmaniz gerekir.)
+
+storeFile=/Users/kullanici/{{PROJECT_NAME}}-release.jks
+storePassword=
+keyAlias={{PROJECT_NAME}}
+keyPassword=

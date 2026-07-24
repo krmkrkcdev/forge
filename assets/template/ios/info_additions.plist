@@ -1,0 +1,40 @@
+	<!-- ============================================================
+	     forge new tarafından eklendi. Gerekçeler: docs/REKLAM.md
+	     ============================================================ -->
+
+	<!-- İhracat uyumluluğu. Uygulama standart HTTPS dışında şifreleme
+	     kullanmıyorsa false. Bu anahtar yoksa App Store Connect HER
+	     yüklemede soruyu elle yanıtlamanızı bekler ve otomatik yayın
+	     akışı orada durur. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
+	<!-- Uygulama yalnızca dikey çalışır, iPad'de çoklu görev (Split View)
+	     desteklemez. Bu anahtar olmadan ve yatay yönler beyan edilmeden
+	     App Store Connect yüklemeyi 90474 hatasıyla reddeder — üstelik
+	     bunu ancak derleme, imzalama ve yükleme turunu tamamen harcadıktan
+	     sonra öğrenirsiniz. Yatay düzen ekleyecekseniz bu anahtarı silip
+	     ~ipad dizisine LandscapeLeft/LandscapeRight ekleyin. -->
+	<key>UIRequiresFullScreen</key>
+	<true/>
+
+	<!-- AdMob uygulama kimliği (tilde'li olan). Şu anki değer Google'ın
+	     TEST kimliğidir; yayına çıkmadan önce AdMob konsolundaki gerçek
+	     kimlikle değiştirin. Test kimliğiyle yayınlanan uygulama sorunsuz
+	     çalışır ve HİÇ gelir getirmez. -->
+	<key>GADApplicationIdentifier</key>
+	<string>{{ADMOB_APP_ID_IOS}}</string>
+
+	<!-- Yükleme ilişkilendirmesi (SKAdNetwork). Bu liste eksikse reklam
+	     ağları uygulamanızdan gelen yüklemeleri göremez ve eCPM düşer —
+	     hiçbir hata mesajı almazsınız, yalnızca daha az kazanırsınız.
+	     Aşağıdaki tek kimlik Google'ındır. Aracılık (mediation) ağları
+	     eklerseniz onların kimliklerini de eklemeniz gerekir; güncel tam
+	     listeyi Google'ın SKAdNetwork belgesinden kopyalayın. -->
+	<key>SKAdNetworkItems</key>
+	<array>
+		<dict>
+			<key>SKAdNetworkIdentifier</key>
+			<string>cstr6suwn9.skadnetwork</string>
+		</dict>
+	</array>

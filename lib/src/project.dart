@@ -51,6 +51,28 @@ class FlutterProject {
   bool get hasAndroid => exists('android');
   bool get hasIos => exists('ios');
 
+  /// Uygulama kaynağında (lib/) geçen bir metin var mı?
+  ///
+  /// Bazı kurallar dosyanın değil, KODUN bir şey yapıp yapmadığına bakar —
+  /// örneğin kullanıcı onayının hiç istenmemesi. Kaba bir ölçüt olduğu için
+  /// yalnızca uyarı üretmekte kullanılır.
+  bool libContains(Pattern needle) {
+    final dir = Directory(path('lib'));
+    if (!dir.existsSync()) return false;
+    for (final entity in dir.listSync(recursive: true)) {
+      if (entity is! File || !entity.path.endsWith('.dart')) continue;
+      try {
+        if (entity.readAsStringSync().contains(needle)) return true;
+      } on FileSystemException {
+        continue;
+      }
+    }
+    return false;
+  }
+
+  /// Uygulama reklam gösteriyor mu?
+  bool get usesAds => (pubspec ?? '').contains('google_mobile_ads:');
+
   String get pubspecPath => 'pubspec.yaml';
   String? get pubspec => read(pubspecPath);
 

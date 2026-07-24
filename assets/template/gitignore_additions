@@ -1,0 +1,22 @@
+
+# ---------------------------------------------------------------- sırlar
+# Buraya giren bir dosya geri alınamaz: depo özel olsa bile anahtarların
+# iptal edilip yeniden üretilmesi gerekir. forge doctor bu desenleri
+# denetler.
+.env
+key.properties
+*.jks
+*.keystore
+*.p8
+*.mobileprovision
+**/fastlane/play-store-credentials.json
+
+# fastlane çıktıları
+**/fastlane/report.xml
+**/fastlane/README.md
+**/fastlane/release_notes.txt
+
+# Yayın çıktıları
+*.ipa
+*.aab
+*.dSYM.zip

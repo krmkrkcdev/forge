@@ -1,0 +1,7 @@
+Bu dosyayı "release_notes.txt" olarak kopyalayın ve her sürümde güncelleyin.
+Buradaki metin TestFlight'ta "What to Test" alanında görünür.
+
+Örnek:
+- Giriş ekranındaki donma sorunu giderildi
+- Bildirim ayarları yeniden düzenlendi
+- Genel performans iyileştirmeleri

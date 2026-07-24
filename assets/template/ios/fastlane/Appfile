@@ -1,0 +1,3 @@
+app_identifier(ENV["APP_IDENTIFIER"])
+team_id(ENV["APPLE_TEAM_ID"])
+# API Key ile kimlik doğrulama kullanıldığı için apple_id/itc_team_id gerekmez.

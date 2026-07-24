@@ -181,6 +181,155 @@ void main() {
     });
   });
 
+  group('reklam denetimleri', () {
+    /// Reklam gösteren bir projeyi verilen yerel yapılandırmayla kurar.
+    void writeAdProject({
+      String? iosAppId,
+      String? androidAppId,
+      bool consentInCode = false,
+      bool skAdNetwork = false,
+    }) {
+      fixture.write(
+        'pubspec.yaml',
+        'name: denek\nversion: 1.0.0+1\n'
+        'dependencies:\n  google_mobile_ads: ^9.0.0\n',
+      );
+      fixture.write(
+        'ios/Runner/Info.plist',
+        '<plist><dict>\n'
+        '${iosAppId == null ? '' : '\t<key>GADApplicationIdentifier</key><string>$iosAppId</string>\n'}'
+        '${skAdNetwork ? '\t<key>SKAdNetworkItems</key><array/>\n' : ''}'
+        '</dict></plist>\n',
+      );
+      fixture.write(
+        'android/app/src/main/AndroidManifest.xml',
+        '<manifest><application>\n'
+        '${androidAppId == null ? '' : '<meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="$androidAppId"/>\n'}'
+        '</application></manifest>\n',
+      );
+      fixture.write(
+        'lib/services/ad_service.dart',
+        consentInCode
+            ? 'void f() => ConsentInformation.instance.canRequestAds();\n'
+            : 'void f() {}\n',
+      );
+    }
+
+    const realIos = 'ca-app-pub-4293530643595446~1065274421';
+    const realAndroid = 'ca-app-pub-4293530643595446~2065274422';
+    const testId = 'ca-app-pub-3940256099942544~3347511713';
+
+    test('reklam paketi yoksa hiçbir reklam kuralı çalışmaz', () {
+      fixture.write('ios/Runner/Info.plist', '<plist><dict></dict></plist>');
+      for (final id in [
+        'admob-app-id-missing',
+        'admob-test-app-id',
+        'admob-consent-missing',
+        'ios-skadnetwork-missing',
+      ]) {
+        expect(findingWithId(fixture.project, id), isNull, reason: id);
+      }
+    });
+
+    test('uygulama kimliği eksikse engel — SDK açılışta çökertir', () {
+      writeAdProject(androidAppId: realAndroid);
+
+      final finding = findingWithId(fixture.project, 'admob-app-id-missing');
+      expect(finding, isNotNull);
+      expect(finding!.severity, Severity.blocker);
+      expect(finding.title, contains('Info.plist'));
+      expect(finding.title, isNot(contains('AndroidManifest')));
+    });
+
+    test('test uygulama kimliği hangi platformdaysa onu söyler', () {
+      // Asıl tuzak bu: iOS gerçek kimliği alır, Android unutulur ve
+      // Android tarafı sessizce sıfır gelir getirir.
+      writeAdProject(iosAppId: realIos, androidAppId: testId);
+
+      final finding = findingWithId(fixture.project, 'admob-test-app-id');
+      expect(finding, isNotNull);
+      expect(finding!.platform, Platform.android);
+      expect(finding.title, contains('Android'));
+    });
+
+    test('iki platform da gerçek kimlikteyse sessiz kalır', () {
+      writeAdProject(iosAppId: realIos, androidAppId: realAndroid);
+      expect(findingWithId(fixture.project, 'admob-test-app-id'), isNull);
+      expect(findingWithId(fixture.project, 'admob-app-id-missing'), isNull);
+    });
+
+    test('onay akışı kodda yoksa uyarır', () {
+      writeAdProject(iosAppId: realIos, androidAppId: realAndroid);
+
+      final finding = findingWithId(fixture.project, 'admob-consent-missing');
+      expect(finding, isNotNull);
+      expect(finding!.severity, Severity.warning);
+    });
+
+    test('onay akışı koddaysa sessiz kalır', () {
+      writeAdProject(
+        iosAppId: realIos,
+        androidAppId: realAndroid,
+        consentInCode: true,
+      );
+      expect(findingWithId(fixture.project, 'admob-consent-missing'), isNull);
+    });
+
+    test('SKAdNetworkItems eksikse uyarır, varsa susar', () {
+      writeAdProject(iosAppId: realIos, androidAppId: realAndroid);
+      expect(findingWithId(fixture.project, 'ios-skadnetwork-missing'), isNotNull);
+
+      writeAdProject(
+        iosAppId: realIos,
+        androidAppId: realAndroid,
+        skAdNetwork: true,
+      );
+      expect(findingWithId(fixture.project, 'ios-skadnetwork-missing'), isNull);
+    });
+
+    test('gizlilik manifesti reklamdan söz etmiyorsa uyarır', () {
+      writeAdProject(iosAppId: realIos, androidAppId: realAndroid);
+      fixture.write(
+        'ios/Runner/PrivacyInfo.xcprivacy',
+        '<plist><dict><key>NSPrivacyTracking</key><false/></dict></plist>',
+      );
+
+      expect(
+        findingWithId(fixture.project, 'privacy-manifest-ignores-ads'),
+        isNotNull,
+      );
+    });
+
+    test('reklam verisi beyan edilmişse sessiz kalır', () {
+      writeAdProject(iosAppId: realIos, androidAppId: realAndroid);
+      fixture.write(
+        'ios/Runner/PrivacyInfo.xcprivacy',
+        '<plist><dict>'
+        '<string>NSPrivacyCollectedDataTypeDeviceID</string>'
+        '</dict></plist>',
+      );
+
+      expect(
+        findingWithId(fixture.project, 'privacy-manifest-ignores-ads'),
+        isNull,
+      );
+    });
+
+    test('ATT paketi varken açıklama metni yoksa engel', () {
+      fixture.write(
+        'pubspec.yaml',
+        'name: denek\nversion: 1.0.0+1\n'
+        'dependencies:\n  app_tracking_transparency: ^2.0.0\n',
+      );
+      fixture.write('ios/Runner/Info.plist', '<plist><dict></dict></plist>');
+
+      final finding =
+          findingWithId(fixture.project, 'ios-tracking-usage-description');
+      expect(finding, isNotNull);
+      expect(finding!.severity, Severity.blocker);
+    });
+  });
+
   group('ios-no-development-team', () {
     test('iOS klasörü yoksa sessiz kalır', () {
       expect(findingWithId(fixture.project, 'ios-no-development-team'), isNull);

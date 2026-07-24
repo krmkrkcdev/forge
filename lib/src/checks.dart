@@ -24,8 +24,15 @@ const List<Check> allChecks = [
   _bundleIdMatch,
   _defaultBundleId,
   _launcherIcon,
+  _launcherIconSource,
   _appDescription,
   _cleartextTrafficInRelease,
+  _admobAppIdMissing,
+  _admobTestApplicationId,
+  _admobConsentMissing,
+  _iosSkAdNetwork,
+  _iosTrackingUsageDescription,
+  _privacyManifestIgnoresAds,
 ];
 
 List<Finding> runChecks(FlutterProject project) {
@@ -327,6 +334,166 @@ Finding? _iosIpadOrientations(FlutterProject p) {
   );
 }
 
+// ----------------------------------------------------------------- reklam
+
+/// Google'ın örnek yayıncı kimliği. Bütün test kimlikleri bunu içerir.
+///
+/// Yayına test kimliğiyle çıkmak sessiz bir hatadır: uygulama sorunsuz
+/// çalışır, reklamlar görünür, hiçbir hata mesajı yoktur — yalnızca gelir
+/// sıfırdır ve bu ancak haftalar sonra fark edilir.
+const _admobTestPublisher = 'ca-app-pub-3940256099942544';
+
+/// Reklam SDK'sı uygulama kimliğini yerel yapılandırmadan okur; yoksa
+/// açılışta çöker.
+Finding? _admobAppIdMissing(FlutterProject p) {
+  if (!p.usesAds) return null;
+
+  final missing = <String>[];
+  if (p.hasIos && !(p.iosInfoPlist ?? '').contains('GADApplicationIdentifier')) {
+    missing.add('ios/Runner/Info.plist → GADApplicationIdentifier');
+  }
+  if (p.hasAndroid &&
+      !(p.androidManifest ?? '').contains('com.google.android.gms.ads.APPLICATION_ID')) {
+    missing.add('AndroidManifest.xml → com.google.android.gms.ads.APPLICATION_ID');
+  }
+  if (missing.isEmpty) return null;
+
+  return Finding(
+    id: 'admob-app-id-missing',
+    severity: Severity.blocker,
+    platform: Platform.both,
+    title: 'AdMob uygulama kimliği tanımlı değil: ${missing.join(", ")}',
+    why: 'google_mobile_ads paketi kurulu ama uygulama kimliği yok. Reklam '
+        'SDK\'sı bu durumda başlatılırken uygulamayı ÇÖKERTİR — reklam '
+        'gösterilmemesiyle kalmaz, uygulama hiç açılmaz.',
+    fix: 'AdMob konsolundan uygulamanın kimliğini (tilde\'li olan, '
+        'ca-app-pub-XXX~YYY) alıp ilgili dosyaya yazın. Reklam BİRİMİ '
+        'kimliği (bölü işaretli) buraya yazılmaz; o koda --dart-define ile '
+        'geçer.',
+  );
+}
+
+Finding? _admobTestApplicationId(FlutterProject p) {
+  if (!p.usesAds) return null;
+
+  final platforms = <String>[];
+  if ((p.iosInfoPlist ?? '').contains(_admobTestPublisher)) platforms.add('iOS');
+  if ((p.androidManifest ?? '').contains(_admobTestPublisher)) {
+    platforms.add('Android');
+  }
+  if (platforms.isEmpty) return null;
+
+  return Finding(
+    id: 'admob-test-app-id',
+    severity: Severity.warning,
+    platform: platforms.length == 2
+        ? Platform.both
+        : (platforms.first == 'iOS' ? Platform.ios : Platform.android),
+    title: 'AdMob TEST uygulama kimliği kullanılıyor: ${platforms.join(" ve ")}',
+    why: 'Bu kimlikle yayınlanan uygulama kusursuz çalışır, reklamlar '
+        'görünür ve hiçbir hata mesajı vermez — ama HİÇ gelir getirmez. '
+        'Geri bildirim vermeyen bir hata olduğu için aylarca fark '
+        'edilmeyebilir. Tek platformun unutulması da aynı şeydir.',
+    fix: 'AdMob konsolundaki gerçek uygulama kimliğiyle değiştirin '
+        '(ios/Runner/Info.plist ve android/app/src/main/AndroidManifest.xml). '
+        'Geliştirme sırasında test reklamı görmeye devam edersiniz: reklam '
+        'BİRİMİ kimlikleri ayrıdır ve yalnızca yayın derlemesinde '
+        '--dart-define ile verilir.',
+  );
+}
+
+Finding? _admobConsentMissing(FlutterProject p) {
+  if (!p.usesAds) return null;
+  if (p.libContains('ConsentInformation')) return null;
+
+  return const Finding(
+    id: 'admob-consent-missing',
+    severity: Severity.warning,
+    platform: Platform.both,
+    title: 'Reklam onayı (UMP) hiç istenmiyor',
+    why: 'AB ve İngiltere\'deki kullanıcılara onay formu göstermek '
+        'zorunludur. Form gösterilmeyince bu bölgelerde reklam sunulmaz — '
+        'yani hem gelir kaybı hem de Google yayıncı politikasının ihlali. '
+        'Kod tarafı sessizce çalışmaya devam ettiği için fark edilmez.',
+    fix: 'AdService.init() içinde ConsentInformation.requestConsentInfoUpdate '
+        've ConsentForm.loadAndShowConsentFormIfRequired çağrılarını '
+        'yapın, sonra canRequestAds() sonucuna göre reklam isteyin. '
+        'Ayrıca AdMob konsolunda Privacy & messaging → GDPR mesajını '
+        'yayınlamayı unutmayın: kod doğru olsa bile mesaj tanımlı değilse '
+        'form çıkmaz.',
+  );
+}
+
+Finding? _iosSkAdNetwork(FlutterProject p) {
+  if (!p.usesAds || !p.hasIos) return null;
+  final plist = p.iosInfoPlist;
+  if (plist == null || plist.contains('SKAdNetworkItems')) return null;
+
+  return const Finding(
+    id: 'ios-skadnetwork-missing',
+    severity: Severity.warning,
+    platform: Platform.ios,
+    title: 'Info.plist içinde SKAdNetworkItems yok',
+    why: 'Reklam ağları bu liste olmadan uygulamanızdan gelen yüklemeleri '
+        'ilişkilendiremez. Reklamlar görünmeye devam eder ama eCPM düşer; '
+        'hiçbir hata mesajı almazsınız, yalnızca daha az kazanırsınız.',
+    fix: 'ios/Runner/Info.plist içine SKAdNetworkItems dizisini ekleyin. '
+        'Google\'ın kimliği cstr6suwn9.skadnetwork; aracılık (mediation) '
+        'kullanıyorsanız tam listeyi Google\'ın SKAdNetwork belgesinden '
+        'kopyalayın.',
+  );
+}
+
+Finding? _iosTrackingUsageDescription(FlutterProject p) {
+  if (!p.hasIos) return null;
+  final pubspec = p.pubspec ?? '';
+  if (!pubspec.contains('app_tracking_transparency:')) return null;
+  if ((p.iosInfoPlist ?? '').contains('NSUserTrackingUsageDescription')) {
+    return null;
+  }
+
+  return const Finding(
+    id: 'ios-tracking-usage-description',
+    severity: Severity.blocker,
+    platform: Platform.ios,
+    title: 'NSUserTrackingUsageDescription eksik',
+    why: 'İzleme izni isteyen ama açıklama metni olmayan uygulama iOS '
+        'tarafından çalışma anında ÇÖKERTİLİR ve App Store incelemesi '
+        'reddeder.',
+    fix: 'ios/Runner/Info.plist içine kullanıcıya iznin ne işe yaradığını '
+        'anlatan bir metin ekleyin:\n'
+        '  <key>NSUserTrackingUsageDescription</key>\n'
+        '  <string>Reklamları ilgi alanlarınıza göre göstermek için.</string>',
+  );
+}
+
+Finding? _privacyManifestIgnoresAds(FlutterProject p) {
+  if (!p.usesAds || !p.hasIos) return null;
+  final manifest = p.read('ios/Runner/PrivacyInfo.xcprivacy');
+  if (manifest == null) return null; // ayrı kural zaten uyarıyor
+  if (manifest.contains('ThirdPartyAdvertising') ||
+      manifest.contains('NSPrivacyCollectedDataTypeDeviceID')) {
+    return null;
+  }
+
+  return const Finding(
+    id: 'privacy-manifest-ignores-ads',
+    severity: Severity.warning,
+    platform: Platform.ios,
+    title: 'Gizlilik manifesti reklam verisinden hiç söz etmiyor',
+    why: 'Uygulama reklam gösteriyor ama PrivacyInfo.xcprivacy yalnızca '
+        'uygulamanın kendi verisini beyan ediyor. Asıl risk şurada: App '
+        'Store Connect gizlilik anketi de aynı eksik hikâyeyi anlatıyorsa '
+        'beyan gerçekle uyuşmaz ve bu bir red sebebidir.',
+    fix: 'Manifeste reklam SDK\'sının topladığı türleri ekleyin '
+        '(NSPrivacyCollectedDataTypeDeviceID ve '
+        'NSPrivacyCollectedDataTypeAdvertisingData, amaç '
+        'ThirdPartyAdvertising) ve App Store Connect gizlilik anketini '
+        'AYNI biçimde doldurun: Tanımlayıcılar → Cihaz Kimliği, '
+        'Kullanım Verisi → Reklam Verisi.',
+  );
+}
+
 // ------------------------------------------------------------------- ortak
 
 /// Korunması gereken bir sır dosyası türü.
@@ -463,6 +630,39 @@ Finding? _launcherIcon(FlutterProject p) {
         'incelemesinde reddedilir ve Play Store\'da kurumsal görünmez.',
     fix: 'flutter_launcher_icons paketini ekleyip assets/icon/icon.png '
         'dosyanızdan tüm boyutları üretin.',
+  );
+}
+
+/// İkon yapılandırması var ama kaynak görsel yok.
+///
+/// `flutter_launcher_icons` satırının pubspec'te bulunması ikonun ÜRETİLDİĞİ
+/// anlamına gelmez. Yapılandırma hazır, görsel eksik olduğunda uygulama
+/// varsayılan Flutter logosuyla yayınlanır ve inceleme reddedilir.
+Finding? _launcherIconSource(FlutterProject p) {
+  final pubspec = p.pubspec ?? '';
+  if (!pubspec.contains('flutter_launcher_icons')) return null;
+
+  final missing = <String>[];
+  for (final match in RegExp(
+    r'''^\s+(?:image_path|adaptive_icon_foreground|image):\s*"?([^"\n]+)"?\s*$''',
+    multiLine: true,
+  ).allMatches(pubspec)) {
+    final path = match.group(1)!.trim();
+    if (!p.exists(path)) missing.add(path);
+  }
+  if (missing.isEmpty) return null;
+
+  return Finding(
+    id: 'launcher-icon-source-missing',
+    severity: Severity.warning,
+    platform: Platform.both,
+    title: 'İkon kaynak görseli yok: ${missing.toSet().join(", ")}',
+    why: 'pubspec.yaml ikon üretimini yapılandırıyor ama kaynak görsel '
+        'diskte yok; üretim hiç çalışmamış demektir. Uygulama varsayılan '
+        'Flutter logosuyla yayınlanır — App Store bunu reddeder.',
+    fix: '1024x1024, saydamlık İÇERMEYEN bir PNG koyup üretimi çalıştırın:\n'
+        '  dart run flutter_launcher_icons\n'
+        '  dart run flutter_native_splash:create',
   );
 }
 

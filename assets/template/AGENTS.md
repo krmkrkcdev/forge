@@ -31,6 +31,11 @@ insana sorun.
    commit'lendiğinden şüphelenirseniz durun ve insana söyleyin.
 6. **Kullanıcıya ne söylediğinize dikkat edin.** Arayüzdeki gizlilik metni
    verinin gerçekte nereye gittiğiyle uyuşmalıdır.
+7. **Reklam kuralları uygulama başına yeniden tartışılmaz.** Biçimler,
+   yerleşim ve sıklık `docs/REKLAM.md` içinde bir kez karara bağlanmıştır;
+   `lib/services/ad_service.dart` ve `lib/widgets/banner_ad_slot.dart` her
+   uygulamada aynı dosyadır. Değiştirmeniz gerekiyorsa önce insana sorun —
+   değişiklik bu uygulamaya değil, standarda yapılır.
 
 ## Dil ve üslup
 
@@ -92,6 +97,10 @@ Bunların hepsi gerçekten başımıza geldi:
 | `PrivacyInfo.xcprivacy`'nin Xcode projesine kayıtlı olmaması | Dosya pakete girmez, sessizce işe yaramaz |
 | `pubspec.yaml` sürümünde `+build` olmaması | Yayın betiği hiç başlamaz |
 | Proje yolunda ASCII olmayan karakter (Windows) | Gradle ve shader derleyici başarısız olur |
+| Yayına AdMob **test** uygulama kimliğiyle çıkmak | Uygulama sorunsuz çalışır, gelir sıfırdır; haftalar sonra fark edilir |
+| Tek platformun reklam kimliğini doldurmayı unutmak | Aynı sonuç, yalnızca o platformda |
+| UMP onay formunun eksikliği | AB kullanıcılarına reklam sunulmaz, hesap politika ihlaline düşer |
+| iPad hedefliyken yatay yönlerin beyan edilmemesi | App Store Connect yüklemeyi 90474 hatasıyla reddeder |
 
 `forge doctor` bunların hepsini denetler. Yeni bir tuzağa düşerseniz çözümünü
 `forge`'a kural olarak ekleyin — bir daha aynı yerde takılmayın.

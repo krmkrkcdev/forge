@@ -1,0 +1,85 @@
+default_platform(:android)
+
+# Fastlane'in çalışma dizini android/ klasörüdür, bu yüzden "../build/..."
+# Flutter projesinin kökündeki build çıktısına denk gelir.
+AAB_PATH = "../build/app/outputs/bundle/release/app-release.aab".freeze
+
+platform :android do
+
+  before_all do
+    unless File.exist?(File.expand_path(AAB_PATH, Dir.pwd))
+      UI.user_error!("App Bundle bulunamadı: #{AAB_PATH}\nÖnce `flutter build appbundle --release` çalıştırın (deploy.sh bunu yapar).")
+    end
+  end
+
+  desc "Sürüm notlarını fastlane/release_notes.txt dosyasından oku (yoksa varsayılan metin)"
+  private_lane :write_changelog do
+    notes_path = File.join(Dir.pwd, "release_notes.txt")
+    next unless File.exist?(notes_path)
+
+    # supply, notları metadata/android/<dil>/changelogs/<versionCode>.txt yolundan okur.
+    lang = ENV["PLAY_STORE_LANG"] || "tr-TR"
+    version_code = ENV["DEPLOY_BUILD_NUMBER"]
+    next if version_code.to_s.empty?
+
+    dir = File.join(Dir.pwd, "metadata", "android", lang, "changelogs")
+    FileUtils.mkdir_p(dir)
+    FileUtils.cp(notes_path, File.join(dir, "#{version_code}.txt"))
+    UI.message("Sürüm notu hazırlandı: #{lang}/changelogs/#{version_code}.txt")
+  end
+
+  desc "Play Store Beta kanalına hızlı yükleme"
+  lane :beta do
+    write_changelog
+
+    if ENV["DEPLOY_DRY_RUN"] == "true"
+      UI.important("DRY-RUN: App Bundle hazır, Play Store'a yükleme atlandı.")
+      next
+    end
+
+    upload_to_play_store(
+      track: "beta",
+      aab: AAB_PATH,
+      release_status: "completed",
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_changelogs: false
+    )
+  end
+
+  desc "Play Store Production'a yükle (PLAY_ROLLOUT ile kademeli dağıtım yapılabilir)"
+  lane :release do
+    write_changelog
+
+    if ENV["DEPLOY_DRY_RUN"] == "true"
+      UI.important("DRY-RUN: App Bundle hazır, Play Store'a yükleme atlandı.")
+      next
+    end
+
+    # PLAY_ROLLOUT=0.1 -> kullanıcıların %10'una aç (kademeli yayın).
+    # Tanımlı değilse doğrudan %100 yayınlanır.
+    rollout = ENV["PLAY_ROLLOUT"]
+    staged  = !rollout.to_s.empty? && rollout.to_f < 1.0
+
+    if staged
+      UI.important("Kademeli yayın: kullanıcıların %#{(rollout.to_f * 100).round}'ine açılıyor.")
+    end
+
+    params = {
+      track: "production",
+      aab: AAB_PATH,
+      release_status: staged ? "inProgress" : "completed",
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_changelogs: false
+    }
+    params[:rollout] = rollout.to_s if staged
+
+    upload_to_play_store(params)
+  end
+
+end

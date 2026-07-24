@@ -3,12 +3,14 @@ import 'dart:io';
 import 'package:args/command_runner.dart';
 import 'package:forge/src/commands/doctor_command.dart';
 import 'package:forge/src/commands/fix_command.dart';
+import 'package:forge/src/commands/new_command.dart';
 
 Future<void> main(List<String> arguments) async {
   final runner = CommandRunner<int>(
     'forge',
     'Flutter uygulamalarını üret, mağazaya hazırla, yayınla.',
   )
+    ..addCommand(NewCommand())
     ..addCommand(DoctorCommand())
     ..addCommand(FixCommand());
 
