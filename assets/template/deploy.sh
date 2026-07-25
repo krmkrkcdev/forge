@@ -275,8 +275,9 @@ else
     exit 1
   fi
 
-  # Test klasörü yoksa test adımı atlanır (her projede test olmayabilir).
-  if [ -d test ]; then
+  # İçinde gerçekten test dosyası yoksa test adımı atlanır: `flutter test`
+  # boş test dizininde 1 koduyla çıkar ve yayın sebepsiz yere dururdu.
+  if [ -n "$(find test -name '*_test.dart' -print -quit 2>/dev/null)" ]; then
     echo "🧪 flutter test..."
     if ! flutter test; then
       echo ""

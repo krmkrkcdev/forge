@@ -101,6 +101,9 @@ Bunların hepsi gerçekten başımıza geldi:
 | Tek platformun reklam kimliğini doldurmayı unutmak | Aynı sonuç, yalnızca o platformda |
 | UMP onay formunun eksikliği | AB kullanıcılarına reklam sunulmaz, hesap politika ihlaline düşer |
 | iPad hedefliyken yatay yönlerin beyan edilmemesi | App Store Connect yüklemeyi 90474 hatasıyla reddeder |
+| İkili (binary) iOS pod'larının arm64-simülatör dilimi olmaması (ML Kit vb.) | Yalnız-arm64 yeni simülatörlerde bağlayıcı "built for 'iOS'" hatası verir; x86_64 destekleyen eski çalışma zamanında (ör. iOS 17.x, Rosetta) ya da gerçek cihazda test edin — cihaz ve mağaza derlemeleri etkilenmez |
+| `flutter build ios --simulator` çıktısının x86_64 olması | Yalnız-arm64 simülatöre kurulum "Failed to find matching arch" ile reddedilir; simülatör için `flutter run -d <udid>` kullanın |
 
-`forge doctor` bunların hepsini denetler. Yeni bir tuzağa düşerseniz çözümünü
+`forge doctor` bunların hepsini denetler (simülatör satırları hariç — onlar
+geliştirme ortamı tuzağıdır, yayını etkilemez). Yeni bir tuzağa düşerseniz çözümünü
 `forge`'a kural olarak ekleyin — bir daha aynı yerde takılmayın.

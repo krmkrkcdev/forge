@@ -54,6 +54,11 @@ class ProjectScaffold {
         'lib/screens/home_screen.dart': '$_app/lib/screens/home_screen.dart',
         'lib/services/ad_service.dart': '$_app/lib/services/ad_service.dart',
         'lib/widgets/banner_ad_slot.dart': '$_app/lib/widgets/banner_ad_slot.dart',
+        // flutter create'in örnek testi silinir (silinen widget'lara bakar)
+        // ama yerine bir şey konmazsa `flutter test` boş dizinde 1 ile çıkar:
+        // AGENTS.md'deki doğrulama ve deploy.sh'ın kalite kontrolü daha ilk
+        // günden kırılır. Bu yüzden iskelet her zaman en az bir testle gelir.
+        'smoke_test.dart': '$_app/test/smoke_test.dart',
       };
 
   /// Bu dosyalar kopyalanmaz; başka bir dosyanın içine karıştırılır.
