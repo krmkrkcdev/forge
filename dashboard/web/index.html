@@ -96,6 +96,15 @@
             </div>
           </div>
 
+          <div class="action-group">
+            <h3>🖥 Sunucu — Site & Backend</h3>
+            <p class="group-note">Depodaki <code>site/</code> ya da <code>backend/</code> klasörünü sunucuya kurar. Mağazadan bağımsızdır.</p>
+            <div class="act-item">
+              <button data-act="server-deploy" class="publish">🖥 Sunucuya kur (git + docker)</button>
+              <small class="hint">SSH ile bağlanır: klasörü <strong>açar</strong>, depoyu <strong>çeker</strong> (ilk seferde klonlar) ve <code>docker compose up -d --build</code> çalıştırır. <strong>Kod git'ten gider</strong> — commit'lenmemiş ya da push'lanmamış iş varsa başlamaz ve nedenini söyler. Sunucu bilgileri: ⚙ Hesap Varsayılanları → Sunucu.</small>
+            </div>
+          </div>
+
           <div class="action-group plat-ios">
             <h3>🍎 iOS — Build & Yayın</h3>
             <p class="group-note">TestFlight ve App Store yolu. <strong>Android'den bağımsızdır</strong> — oradaki bir eksik bu akışı durdurmaz.</p>

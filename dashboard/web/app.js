@@ -356,6 +356,13 @@ function act(which) {
       }, () => stream('api/fix?' + q + '&apply=1', 'Düzeltmeler uygulanıyor'));
     case 'update':
       return stream('api/update?' + q, 'flutter pub get');
+    case 'server-deploy':
+      return confirmThen({
+        title: 'Sunucuya kur',
+        body: 'Sunucuda klasör açılacak, depo <strong>git\'ten çekilecek</strong> '
+          +'ve <code>docker compose up -d --build</code> çalıştırılacak. '
+          + 'Çalışan konteyner yeniden başlatılır.',
+      }, () => stream('api/server-deploy?' + q, 'Sunucuya kurulum'));
     case 'upgrade':
       return stream('api/update?' + q + '&upgrade=1', 'flutter pub upgrade');
     // Platform başına ayrı akış: Android'deki bir eksik iOS yayınını

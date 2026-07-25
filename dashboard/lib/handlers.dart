@@ -51,6 +51,8 @@ class Handlers {
           return _new(request);
         case 'api/deploy':
           return _deploy(request);
+        case 'api/server-deploy':
+          return _serverDeploy(request);
         case 'api/config':
           return await _config(request);
         case 'api/config/upload':
@@ -606,6 +608,11 @@ class Handlers {
     'GOOGLE_PLAY_JSON_KEY',
     'MATCH_GIT_URL',
     'MATCH_PASSWORD',
+    // Sunucu bilgileri de hesap düzeyidir: bütün uygulamalar aynı
+    // makineye kurulur.
+    'SERVER_HOST',
+    'SERVER_USER',
+    'SERVER_BASE_PATH',
   };
 
   /// Uygulamanın çalışması ve yayınlanması için gereken bütün anahtarların
@@ -715,6 +722,34 @@ class Handlers {
       'note': 'Uygulamanın konuştuğu API adresi (varsa).',
       'fields': [
         {'key': 'API_BASE_URL', 'label': 'API taban adresi', 'placeholder': 'https://api.sirketiniz.com'},
+      ],
+    },
+    {
+      'id': 'server',
+      'title': 'Sunucu (site / backend yayını)',
+      'note': 'Panelin "Sunucuya kur" adımı bu bilgileri kullanır: SSH ile '
+          'bağlanır, klasörü açar, depoyu çeker ve docker compose ile ayağa '
+          'kaldırır. ANAHTAR tabanlı SSH gerekir — panel şifre soramaz '
+          '(ssh-copy-id ile bir kez kurun).',
+      'fields': [
+        {
+          'key': 'SERVER_HOST',
+          'label': 'Sunucu adresi',
+          'placeholder': '5.10.220.58',
+          'desc': 'IP ya da alan adı.',
+        },
+        {
+          'key': 'SERVER_USER',
+          'label': 'SSH kullanıcısı',
+          'placeholder': 'root',
+          'desc': 'Boş bırakılırsa root kullanılır.',
+        },
+        {
+          'key': 'SERVER_BASE_PATH',
+          'label': 'Servis kök dizini',
+          'placeholder': '/opt/services',
+          'desc': 'Proje bunun altına <depo adı> klasörüyle kurulur.',
+        },
       ],
     },
     {
@@ -1104,6 +1139,148 @@ class Handlers {
       _writeEnv(p.join(path, '.env'), {key: './$destDir/$name'});
     }
   }
+
+  // -------------------------------------------------- sunucuya kurulum
+
+  /// Projeyi sunucuya kurar: klasörü açar, depoyu çeker (yoksa klonlar) ve
+  /// docker compose ile ayağa kaldırır — hepsi tek SSH oturumunda.
+  ///
+  /// Sunucu kodu GIT'TEN alır, bu makineden değil. Bu yüzden commit'lenmemiş
+  /// ya da push'lanmamış iş varsa BAŞLAMAZ: yoksa "panelden kurdum ama
+  /// değişikliğim yok" tuzağı doğar ve sebebi hiç görünmez.
+  Response _serverDeploy(Request request) {
+    final path = request.url.queryParameters['path'];
+    if (path == null || path.isEmpty) {
+      return _sseError('path parametresi gerekli');
+    }
+
+    final account = _readAccount();
+    String setting(String key, String fallback) {
+      final v = (account[key] ?? '').trim();
+      return v.isEmpty ? fallback : v;
+    }
+
+    final host = setting('SERVER_HOST', '');
+    if (host.isEmpty) {
+      return _sseError(
+        'Sunucu adresi tanımlı değil. Soldaki ⚙ Hesap Varsayılanları → '
+        '"Sunucu" bölümünü doldurun.',
+      );
+    }
+    final user = setting('SERVER_USER', 'root');
+    final base = setting('SERVER_BASE_PATH', '/opt/services');
+
+    // Depo kökü: Flutter projesi app/ altında olabilir, git kökü üsttedir.
+    final repoRoot = _gitOutput(path, ['rev-parse', '--show-toplevel']);
+    if (repoRoot == null) {
+      return _sseError('Git deposu bulunamadı: $path');
+    }
+    final remoteUrl = _gitOutput(repoRoot, ['remote', 'get-url', 'origin']);
+    if (remoteUrl == null || remoteUrl.isEmpty) {
+      return _sseError(
+        'Deponun "origin" uzak adresi yok. Sunucu kodu git\'ten çeker; '
+        'önce depoyu GitHub\'a bağlayın.',
+      );
+    }
+
+    // --- yerel iş bitmiş mi? (sunucu git'ten çekeceği için şart)
+    final dirty = _gitOutput(repoRoot, ['status', '--porcelain']);
+    if (dirty != null && dirty.isNotEmpty) {
+      return _sseError(
+        'Yerelde commit\'lenmemiş değişiklikler var. Sunucu git\'ten '
+        'çektiği için bunlar kurulmaz — önce commit\'leyip push edin.',
+      );
+    }
+    final branch = _gitOutput(repoRoot, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    if (branch == null || branch.isEmpty || branch == 'HEAD') {
+      return _sseError('Geçerli bir dal bulunamadı (detached HEAD?).');
+    }
+    final unpushed = _gitOutput(repoRoot, ['log', '--oneline', '@{u}..HEAD']);
+    if (unpushed == null) {
+      return _sseError(
+        '"$branch" dalının uzak karşılığı yok. Önce gönderin:\n'
+        '  git push -u origin $branch',
+      );
+    }
+    if (unpushed.isNotEmpty) {
+      final count = unpushed.split('\n').where((l) => l.isNotEmpty).length;
+      return _sseError(
+        'Gönderilmemiş $count commit var — sunucu bunları göremez. Önce:\n'
+        '  git push\n\n$unpushed',
+      );
+    }
+
+    // --- hangi klasörde compose var?
+    const candidates = ['site', 'backend', '.'];
+    String? composeDir;
+    for (final dir in candidates) {
+      if (File(p.join(repoRoot, dir, 'docker-compose.yml')).existsSync()) {
+        composeDir = dir;
+        break;
+      }
+    }
+    if (composeDir == null) {
+      return _sseError(
+        'docker-compose.yml bulunamadı (bakılan yerler: '
+        '${candidates.join(", ")}). Sunucuya kurulacak bir servis yok.',
+      );
+    }
+
+    final name = p.basename(repoRoot);
+    final target = p.posix.join(base, name);
+
+    // Uzak kabukta çalışacak betik. Değerler tek tırnakla kaçırılır:
+    // kullanıcının girdiği yol/ad uzak kabukta komuta dönüşemez.
+    final script = '''
+set -e
+echo "→ hedef: ${_shq(target)}"
+mkdir -p ${_shq(base)}
+if [ -d ${_shq('$target/.git')} ]; then
+  echo "→ var olan kopya güncelleniyor (git pull)"
+  cd ${_shq(target)}
+  git fetch --prune origin
+  git checkout ${_shq(branch)}
+  git pull --ff-only
+else
+  echo "→ depo klonlanıyor"
+  git clone --branch ${_shq(branch)} ${_shq(remoteUrl)} ${_shq(target)}
+  cd ${_shq(target)}
+fi
+echo "→ sürüm: \$(git rev-parse --short HEAD) (\$(git log -1 --pretty=%s))"
+cd ${_shq(composeDir)}
+echo "→ docker compose up -d --build  (${_shq(composeDir)})"
+docker compose up -d --build
+echo "→ durum:"
+docker compose ps
+''';
+
+    return _spawn(
+      'ssh',
+      [
+        // BatchMode: anahtar yoksa şifre beklemek yerine hemen ve anlaşılır
+        // biçimde başarısız olur — panel etkileşimli soru soramaz.
+        '-o', 'BatchMode=yes',
+        '-o', 'StrictHostKeyChecking=accept-new',
+        '$user@$host',
+        script,
+      ],
+      workingDir: repoRoot,
+    );
+  }
+
+  /// Git komutunu çalıştırır ve çıktısını döndürür; komut başarısızsa `null`.
+  String? _gitOutput(String dir, List<String> args) {
+    try {
+      final r = Process.runSync('git', args, workingDirectory: dir);
+      if (r.exitCode != 0) return null;
+      return r.stdout.toString().trim();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Değeri uzak kabuk için tek tırnakla kaçırır.
+  static String _shq(String value) => "'${value.replaceAll("'", r"'\''")}'";
 
   // ------------------------------------------------------------ deploy
 
