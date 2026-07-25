@@ -1228,6 +1228,7 @@ class Handlers {
 
     final name = p.basename(repoRoot);
     final target = p.posix.join(base, name);
+    final cloneUrl = _sunucuGitAdresi(remoteUrl);
 
     // Uzak kabukta çalışacak betik. Değerler tek tırnakla kaçırılır:
     // kullanıcının girdiği yol/ad uzak kabukta komuta dönüşemez.
@@ -1242,8 +1243,8 @@ if [ -d ${_shq('$target/.git')} ]; then
   git checkout ${_shq(branch)}
   git pull --ff-only
 else
-  echo "→ depo klonlanıyor"
-  git clone --branch ${_shq(branch)} ${_shq(remoteUrl)} ${_shq(target)}
+  echo "→ depo klonlanıyor: ${_shq(cloneUrl)}"
+  git clone --branch ${_shq(branch)} ${_shq(cloneUrl)} ${_shq(target)}
   cd ${_shq(target)}
 fi
 echo "→ sürüm: \$(git rev-parse --short HEAD) (\$(git log -1 --pretty=%s))"
@@ -1281,6 +1282,20 @@ docker compose ps
 
   /// Değeri uzak kabuk için tek tırnakla kaçırır.
   static String _shq(String value) => "'${value.replaceAll("'", r"'\''")}'";
+
+  /// Sunucunun klonlarken kullanacağı adres.
+  ///
+  /// HTTPS adresleri SSH biçimine çevrilir: sunucu depoya anahtarla
+  /// (deploy key) erişir, HTTPS ise başsız makinede jeton gömmeyi
+  /// gerektirir ve private depoda sessizce kimlik doğrulama hatası verir.
+  /// Yalnızca İLK klonlamayı etkiler; sonraki güncellemeler sunucudaki
+  /// remote'u kullanır. Sunucunuz HTTPS+jeton kullanıyorsa ilk klonlamayı
+  /// elle yapın, panel sonrasını yürütür.
+  static String _sunucuGitAdresi(String url) {
+    final m = RegExp(r'^https://([^/@]+)/(.+?)(?:\.git)?/?$').firstMatch(url);
+    if (m == null) return url; // zaten SSH ya da tanımadığımız biçim
+    return 'git@${m.group(1)}:${m.group(2)}.git';
+  }
 
   // ------------------------------------------------------------ deploy
 
