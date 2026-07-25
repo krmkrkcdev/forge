@@ -1,0 +1,1339 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:forge/src/checks.dart';
+import 'package:forge/src/environment.dart';
+import 'package:forge/src/native_patch.dart';
+// dart:io'nun Platform sınıfını (Platform.script) gölgelememesi için
+// finding.dart'ın Platform enum'unu gizliyoruz; buradaki kod enum'u tip
+// adıyla kullanmıyor, yalnızca f.platform üzerinden erişiyor.
+import 'package:forge/src/finding.dart' hide Platform;
+import 'package:forge/src/project.dart';
+import 'package:path/path.dart' as p;
+import 'package:shelf/shelf.dart';
+
+/// Panelin bütün uç noktaları.
+///
+/// İki tür iş var ve bilinçli olarak farklı yürür:
+///  * Denetim (doctor) — hızlı ve saf, forge kütüphanesi doğrudan çağrılır.
+///  * Değiştiren işler (fix, new, deploy) — alt süreç olarak başlatılır ve
+///    çıktısı canlı (SSE) akıtılır; çünkü dakikalarca sürebilirler ve
+///    kullanıcının ne olduğunu anlık görmesi gerekir.
+class Handlers {
+  Handlers({required this.forgeRoot, required this.projectsBase});
+
+  final String forgeRoot;
+  final String projectsBase;
+
+  /// Aynı anda tek bir değiştiren iş. İki yayının çakışması, yarısı yüklenmiş
+  /// bir sürümden çok daha kötü sonuçlar doğurabilir.
+  bool _busy = false;
+
+  String get _forgeEntry => p.join(forgeRoot, 'bin', 'forge.dart');
+  String get _webDir => p.join(forgeRoot, 'dashboard', 'web');
+
+  Future<Response> router(Request request) async {
+    final path = request.url.path;
+    try {
+      switch (path) {
+        case 'api/projects':
+          return _projects();
+        case 'api/doctor':
+          return _doctor(request);
+        case 'api/readiness':
+          return _readiness(request);
+        case 'api/fix':
+          return _fix(request);
+        case 'api/update':
+          return _update(request);
+        case 'api/new':
+          return _new(request);
+        case 'api/deploy':
+          return _deploy(request);
+        case 'api/config':
+          return await _config(request);
+        case 'api/config/upload':
+          return await _configUpload(request);
+        case 'api/account':
+          return await _account(request);
+        case 'api/account/upload':
+          return await _accountUpload(request);
+        case 'api/icon/upload':
+          return await _iconUpload(request);
+        case 'api/icon':
+          return _icon(request);
+        case 'api/guide':
+          return await _guide(request);
+        case 'api/github/status':
+          return _githubStatus();
+        case 'api/github/login':
+          return _githubLogin();
+        default:
+          return _static(path);
+      }
+    } catch (e) {
+      return _json({'error': '$e'}, status: 500);
+    }
+  }
+
+  // ---------------------------------------------------------- projeler
+
+  Response _projects() {
+    final base = Directory(projectsBase);
+    final found = <Map<String, dynamic>>[];
+    if (base.existsSync()) {
+      for (final entity in base.listSync()) {
+        if (entity is! Directory) continue;
+        // Hem kök hem forge new düzeni (app/): ikisini de dener.
+        for (final candidate in [entity.path, p.join(entity.path, 'app')]) {
+          final info = _describe(candidate);
+          if (info != null) {
+            found.add(info);
+            break;
+          }
+        }
+      }
+    }
+    found.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+    return _json({'base': projectsBase, 'projects': found});
+  }
+
+  /// Bir dizinin yayınlanabilir bir Flutter projesi olup olmadığını anlatır;
+  /// değilse `null`.
+  Map<String, dynamic>? _describe(String dir) {
+    final pubspec = File(p.join(dir, 'pubspec.yaml'));
+    if (!pubspec.existsSync()) return null;
+    final content = pubspec.readAsStringSync();
+    if (!content.contains('sdk: flutter')) return null;
+
+    final project = FlutterProject(dir);
+    return {
+      'name': p.basename(p.dirname(dir)) == 'app'
+          ? p.basename(dir)
+          : p.basename(dir),
+      'label': _prettyName(dir, project),
+      'path': dir,
+      'appName': project.appName,
+      'version': project.versionValue,
+      'hasIos': project.hasIos,
+      'hasAndroid': project.hasAndroid,
+      'hasDeploy': File(p.join(dir, 'deploy.sh')).existsSync(),
+      'usesAds': project.usesAds,
+    };
+  }
+
+  String _prettyName(String dir, FlutterProject project) {
+    // forge new düzeninde proje app/ altında; kullanıcıya deponun adını
+    // göstermek daha anlamlı.
+    final repo =
+        p.basename(dir) == 'app' ? p.basename(p.dirname(dir)) : p.basename(dir);
+    return repo;
+  }
+
+  // ------------------------------------------------------------ doctor
+
+  Response _doctor(Request request) {
+    final path = request.url.queryParameters['path'];
+    if (path == null || path.isEmpty) {
+      return _json({'error': 'path parametresi gerekli'}, status: 400);
+    }
+    final project = FlutterProject.locate(path);
+    if (project == null) {
+      return _json({'error': 'Flutter projesi bulunamadı: $path'}, status: 404);
+    }
+
+    final findings = [
+      for (final f in runChecks(project)) _findingJson(f, 'proje'),
+      for (final f in runEnvironmentChecks()) _findingJson(f, 'ortam'),
+    ];
+    final blockers =
+        findings.where((f) => f['severity'] == 'blocker').length;
+    final warnings =
+        findings.where((f) => f['severity'] == 'warning').length;
+
+    return _json({
+      'project': project.appName ?? p.basename(project.root),
+      'root': project.root,
+      'findings': findings,
+      'summary': {
+        'blockers': blockers,
+        'warnings': warnings,
+        'info': findings.length - blockers - warnings,
+        'autoFixable': findings.where((f) => f['autoFixable'] == true).length,
+        'ready': blockers == 0,
+      },
+    });
+  }
+
+  Map<String, dynamic> _findingJson(Finding f, String source) => {
+        'id': f.id,
+        'severity': f.severity.name, // blocker | warning | info
+        'severityLabel': f.severity.label,
+        'platform': f.platform.name, // ios | android | both
+        'title': f.title,
+        'why': f.why,
+        'fix': f.fix,
+        'autoFixable': f.autoFixable,
+        'source': source,
+      };
+
+  // ---------------------------------------------------- yayına hazırlık
+
+  /// "Yayına ne kaldı?" — iOS ve Android yolları AYRI değerlendirilir:
+  /// Android'de eksik bir anahtar iOS yayınını bekletmemeli. Ortak işler
+  /// (ikon) ayrı döner; her platformun kendi kapı listesi ve hükmü vardır.
+  Response _readiness(Request request) {
+    final path = request.url.queryParameters['path'];
+    if (path == null || path.isEmpty) {
+      return _json({'error': 'path gerekli'}, status: 400);
+    }
+    final project = FlutterProject.locate(path) ?? FlutterProject(path);
+
+    final findings = [...runChecks(project), ...runEnvironmentChecks()];
+    // "both" bulgular iki yolu da ilgilendirir (ör. sır sızıntısı, sürüm).
+    List<Finding> byPlat(String plat) => findings
+        .where((f) => f.platform.name == plat || f.platform.name == 'both')
+        .toList();
+
+    final env = _readEnv(p.join(path, '.env'));
+    final account = _readAccount();
+    bool has(String k) =>
+        (env[k]?.isNotEmpty ?? false) || (account[k]?.isNotEmpty ?? false);
+    bool realUnit(String k) {
+      final v = env[k] ?? '';
+      return v.isNotEmpty && !v.contains(_admobTestPub);
+    }
+
+    Map<String, dynamic> doctorGate(String plat) {
+      final list = byPlat(plat);
+      final b = list.where((f) => f.severity == Severity.blocker).length;
+      final w = list.where((f) => f.severity == Severity.warning).length;
+      return {
+        'label': 'Mağaza denetimi',
+        'status': b > 0 ? 'block' : (w > 0 ? 'warn' : 'ok'),
+        'hint': '$b engel · $w uyarı',
+        'jump': 'doctor',
+      };
+    }
+
+    // ------------------------------------------------------------ iOS yolu
+    final ios = <Map<String, dynamic>>[];
+    if (project.hasIos) {
+      ios.add(doctorGate('ios'));
+      final ascOk =
+          has('ASC_KEY_ID') && has('ASC_ISSUER_ID') && has('ASC_KEY_FILEPATH');
+      ios.add({
+        'label': 'App Store Connect anahtarı',
+        'status': ascOk ? 'ok' : 'todo',
+        'hint': ascOk ? 'girildi' : 'Key ID / Issuer / .p8 eksik',
+        'jump': 'account',
+      });
+      if (project.usesAds) {
+        final app = _readNativeAdmob(path, 'ios') ?? '';
+        final appReal = app.isNotEmpty && !app.contains(_admobTestPub);
+        ios.add({
+          'label': 'AdMob uygulama kimliği',
+          'status': appReal ? 'ok' : 'warn',
+          'hint': appReal ? 'gerçek' : 'test kimliği — gelir yok',
+          'jump': 'config',
+        });
+        final unitsOk =
+            realUnit('ADMOB_BANNER_IOS') && realUnit('ADMOB_INTERSTITIAL_IOS');
+        ios.add({
+          'label': 'Reklam birim kimlikleri',
+          'status': unitsOk ? 'ok' : 'warn',
+          'hint': unitsOk ? 'girildi' : 'boş/test — gelir yok',
+          'jump': 'config',
+        });
+      }
+    }
+
+    // -------------------------------------------------------- Android yolu
+    final android = <Map<String, dynamic>>[];
+    if (project.hasAndroid) {
+      android.add(doctorGate('android'));
+      final signingOk =
+          File(p.join(path, 'android', 'key.properties')).existsSync();
+      android.add({
+        'label': 'Sürüm imzalama (key.properties)',
+        'status': signingOk ? 'ok' : 'todo',
+        'hint': signingOk
+            ? 'kurulu'
+            : 'android/key.properties.example → key.properties',
+        'jump': 'doctor',
+      });
+      android.add({
+        'label': 'Google Play anahtarı',
+        'status': has('GOOGLE_PLAY_JSON_KEY') ? 'ok' : 'todo',
+        'hint': has('GOOGLE_PLAY_JSON_KEY')
+            ? 'girildi'
+            : 'service account JSON eksik',
+        'jump': 'account',
+      });
+      if (project.usesAds) {
+        final app = _readNativeAdmob(path, 'android') ?? '';
+        final appReal = app.isNotEmpty && !app.contains(_admobTestPub);
+        android.add({
+          'label': 'AdMob uygulama kimliği',
+          'status': appReal ? 'ok' : 'warn',
+          'hint': appReal ? 'gerçek' : 'test kimliği — gelir yok',
+          'jump': 'config',
+        });
+        final unitsOk = realUnit('ADMOB_BANNER_ANDROID') &&
+            realUnit('ADMOB_INTERSTITIAL_ANDROID');
+        android.add({
+          'label': 'Reklam birim kimlikleri',
+          'status': unitsOk ? 'ok' : 'warn',
+          'hint': unitsOk ? 'girildi' : 'boş/test — gelir yok',
+          'jump': 'config',
+        });
+      }
+    }
+
+    // -------------------------------------------------------------- ortak
+    final common = <Map<String, dynamic>>[
+      {
+        'label': 'Uygulama ikonu',
+        'status': File(p.join(path, 'assets', 'icon', 'icon.png')).existsSync()
+            ? 'ok'
+            : 'todo',
+        'hint': 'assets/icon/icon.png',
+        'jump': 'icon',
+      },
+    ];
+
+    Map<String, dynamic> verdict(List<Map<String, dynamic>> gates) {
+      final blocks = gates.where((g) => g['status'] == 'block').length;
+      final todo = gates.where((g) => g['status'] != 'ok').length;
+      return {'blockers': blocks, 'remaining': todo, 'ready': blocks == 0};
+    }
+
+    return _json({
+      'common': common,
+      'platforms': {
+        if (project.hasIos)
+          'ios': {'title': '🍎 iOS', 'gates': ios, ...verdict(ios)},
+        if (project.hasAndroid)
+          'android': {
+            'title': '🤖 Android',
+            'gates': android,
+            ...verdict(android),
+          },
+      },
+    });
+  }
+
+  /// Google'ın test yayıncı kimliği — gerçek gelirle karışmasın.
+  static const _admobTestPub = 'ca-app-pub-3940256099942544';
+
+  // ------------------------------------------------------- yol haritası
+
+  /// Yol haritasındaki ELLE yapılan adımların (ASC kaydı, App Privacy,
+  /// testçi ekleme…) işaret durumu. Panel otomatik izleyemediği adımları
+  /// kullanıcı işaretler; ~/.forge/progress.json'da proje yoluna göre saklanır
+  /// ki panel yeniden başlasa da ilerleme kaybolmasın.
+  Future<Response> _guide(Request request) async {
+    final path = request.url.queryParameters['path'];
+    if (path == null || path.isEmpty) {
+      return _json({'error': 'path gerekli'}, status: 400);
+    }
+    final file = File(p.join(_accountDir, 'progress.json'));
+    Map<String, dynamic> all = {};
+    if (file.existsSync()) {
+      try {
+        all = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+      } catch (_) {}
+    }
+
+    if (request.method == 'POST') {
+      final data =
+          jsonDecode(await request.readAsString()) as Map<String, dynamic>;
+      final key = data['key'] as String?;
+      if (key == null || key.isEmpty) {
+        return _json({'error': 'key gerekli'}, status: 400);
+      }
+      final proj = ((all[path] as Map?) ?? {}).cast<String, dynamic>();
+      if (data['done'] == true) {
+        proj[key] = true;
+      } else {
+        proj.remove(key);
+      }
+      all[path] = proj;
+      Directory(_accountDir).createSync(recursive: true);
+      file.writeAsStringSync(const JsonEncoder.withIndent('  ').convert(all));
+      return _json({'ok': true});
+    }
+
+    return _json({'progress': (all[path] as Map?) ?? {}});
+  }
+
+  // --------------------------------------------------------------- fix
+
+  Response _fix(Request request) {
+    final q = request.url.queryParameters;
+    final path = q['path'];
+    if (path == null || path.isEmpty) {
+      return _sseError('path parametresi gerekli');
+    }
+    final apply = q['apply'] == '1';
+    // Uygulanan düzeltmeler diske yazar; varsayılan deneme çalıştırmasıdır.
+    final args = [
+      'run',
+      _forgeEntry,
+      'fix',
+      '--path',
+      path,
+      if (!apply) '--dry-run',
+    ];
+    return _spawn('dart', args, workingDir: forgeRoot);
+  }
+
+  // --------------------------------------------------------------- ikon
+
+  /// Yüklenen görseli projenin assets/icon dizinine yazar (ikon + adaptive ön
+  /// plan olarak aynı görsel). Üretimi /api/icon (SSE) yapar.
+  Future<Response> _iconUpload(Request request) async {
+    final path = request.url.queryParameters['path'];
+    if (path == null || path.isEmpty) {
+      return _json({'error': 'path parametresi gerekli'}, status: 400);
+    }
+    if (!File(p.join(path, 'pubspec.yaml')).existsSync()) {
+      return _json({'error': 'Proje bulunamadı: $path'}, status: 404);
+    }
+    final dir = Directory(p.join(path, 'assets', 'icon'))
+      ..createSync(recursive: true);
+    final bytes = await request.read().expand((c) => c).toList();
+    if (bytes.isEmpty) {
+      return _json({'error': 'Boş görsel'}, status: 400);
+    }
+    File(p.join(dir.path, 'icon.png')).writeAsBytesSync(bytes);
+    File(p.join(dir.path, 'icon_foreground.png')).writeAsBytesSync(bytes);
+    return _json({'ok': true});
+  }
+
+  /// assets/icon'daki görselden ikon ve açılış ekranını üretir (canlı akış).
+  /// Görsel önce /api/icon/upload ile konmuş olmalı.
+  Response _icon(Request request) {
+    final path = request.url.queryParameters['path'];
+    if (path == null || path.isEmpty) {
+      return _sseError('path parametresi gerekli');
+    }
+    if (!File(p.join(path, 'assets', 'icon', 'icon.png')).existsSync()) {
+      return _sseError('Önce bir görsel yükleyin.');
+    }
+    return _run([
+      _Step('dart', ['run', 'flutter_launcher_icons'], path,
+          label: 'Uygulama ikonu'),
+      _Step('dart', ['run', 'flutter_native_splash:create'], path,
+          label: 'Açılış ekranı'),
+    ]);
+  }
+
+  // ------------------------------------------------------------ güncelle
+
+  /// Projenin bağımlılıklarını tazeler (flutter pub get). `upgrade=1` verilirse
+  /// sürümleri de yükseltir (flutter pub upgrade). Diske yazan bir iştir ama
+  /// mağazaya dönük değildir; onay istemez.
+  Response _update(Request request) {
+    final q = request.url.queryParameters;
+    final path = q['path'];
+    if (path == null || path.isEmpty) {
+      return _sseError('path parametresi gerekli');
+    }
+    if (!File(p.join(path, 'pubspec.yaml')).existsSync()) {
+      return _sseError('pubspec.yaml bulunamadı: $path');
+    }
+    final upgrade = q['upgrade'] == '1';
+    return _spawn('flutter', ['pub', upgrade ? 'upgrade' : 'get'],
+        workingDir: path);
+  }
+
+  // --------------------------------------------------------------- new
+
+  Response _new(Request request) {
+    final q = request.url.queryParameters;
+    final name = q['name'];
+    final org = q['org'];
+    final parent = q['parent'];
+    if (name == null || org == null || parent == null) {
+      return _sseError('name, org ve parent parametreleri gerekli');
+    }
+    final appName = q['appName'];
+    final description = q['description'];
+    final backend = q['backend'] == '1';
+    final github = q['github'] == '1';
+    final visibility = q['visibility'] == 'public' ? '--public' : '--private';
+
+    final steps = <_Step>[
+      _Step(
+        'dart',
+        [
+          'run',
+          _forgeEntry,
+          'new',
+          name,
+          '--org',
+          org,
+          if (appName != null && appName.isNotEmpty) ...['--app-name', appName],
+          if (description != null && description.isNotEmpty)
+            ...['--description', description],
+          if (backend) '--backend',
+        ],
+        // Proje, seçilen üst dizinin içine kurulur.
+        parent,
+        label: 'forge new',
+      ),
+    ];
+
+    // GitHub'a bağlama: forge new zaten yerel bir git deposu kurup ilk
+    // commit'i atıyor. `gh repo create --source ... --push`, o var olan
+    // depodan GitHub'da yeni bir repo oluşturur, origin olarak ekler ve
+    // gönderir. Sonuç: repo hesapta, yerel klasör GitHub dizininde, kod
+    // yüklenmiş — "önce repo, sonra bağla" isteğinin karşılığı.
+    if (github) {
+      if (!_hasExecutable('gh')) {
+        return _sseError(
+          'gh (GitHub CLI) bulunamadı. Kurulum: brew install gh. GitHub '
+          'olmadan oluşturmak için formdaki kutunun işaretini kaldırın.',
+        );
+      }
+      if (Process.runSync('gh', ['auth', 'status'], environment: _localeFix)
+              .exitCode !=
+          0) {
+        return _sseError(
+          'gh kurulu ama GitHub girişi yapılmamış. Kenar çubuğundaki '
+          '"GitHub girişi yap" düğmesini kullanın ya da GitHub olmadan '
+          'oluşturmak için formdaki kutunun işaretini kaldırın.',
+        );
+      }
+      final projectDir = p.join(parent, name);
+      steps.add(_Step(
+        'gh',
+        [
+          'repo',
+          'create',
+          name,
+          visibility,
+          '--source',
+          projectDir,
+          '--remote',
+          'origin',
+          '--push',
+          if (description != null && description.isNotEmpty)
+            ...['--description', description],
+        ],
+        parent,
+        label: 'gh repo create (GitHub\'a bağla ve gönder)',
+      ));
+    }
+
+    return _run(steps);
+  }
+
+  // ------------------------------------------------------------- github
+
+  /// GitHub CLI durumu: kurulu mu, giriş yapılmış mı, hangi hesapla?
+  /// Panel bunu açılışta sorar; eksik varsa uyarı baştan görünür, proje
+  /// oluşturma anına kalmaz.
+  Response _githubStatus() {
+    if (!_hasExecutable('gh')) {
+      return _json({'installed': false, 'authenticated': false});
+    }
+    final res =
+        Process.runSync('gh', ['auth', 'status'], environment: _localeFix);
+    // gh sürümüne göre çıktı stdout'a da stderr'e de gidebiliyor.
+    final out = '${res.stdout}\n${res.stderr}';
+    final account = RegExp(r'account (\S+)').firstMatch(out)?.group(1);
+    return _json({
+      'installed': true,
+      'authenticated': res.exitCode == 0,
+      if (account != null) 'account': account,
+    });
+  }
+
+  /// `gh auth login --web` — terminalsiz cihaz akışı: gh tek seferlik kodu
+  /// konsola basar ve doğrulamayı bekler; istemci github.com/login/device
+  /// sayfasını açar, kullanıcı kodu oraya girer.
+  Response _githubLogin() {
+    if (!_hasExecutable('gh')) {
+      return _sseError(
+          'gh (GitHub CLI) kurulu değil. Terminalde: brew install gh');
+    }
+    return _spawn(
+      'gh',
+      [
+        'auth', 'login', '--web',
+        '--hostname', 'github.com',
+        '--git-protocol', 'https',
+      ],
+      workingDir: forgeRoot,
+    );
+  }
+
+  /// Çocuk süreçlere eklenecek yerel düzeltmesi. Sunucunun ortamında UTF-8
+  /// yereli zaten varsa boş döner (kullanıcının değerine dokunulmaz); yoksa
+  /// LANG/LC_ALL enjekte edilir. Process.start bu haritayı üst ortamın
+  /// ÜZERİNE ekler.
+  static final Map<String, String> _localeFix = (() {
+    final env = Platform.environment;
+    final locale = env['LC_ALL'] ?? env['LANG'] ?? '';
+    if (locale.toUpperCase().contains('UTF-8')) return const <String, String>{};
+    return const {'LANG': 'en_US.UTF-8', 'LC_ALL': 'en_US.UTF-8'};
+  })();
+
+  /// Bir çalıştırılabilir PATH'te var mı? (which/where ile ucuz kontrol.)
+  bool _hasExecutable(String exe) {
+    try {
+      final which = Platform.isWindows ? 'where' : 'which';
+      return Process.runSync(which, [exe]).exitCode == 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ---------------------------------------------------------- yapılandırma
+
+  /// HESAP düzeyi anahtarlar: aynı Apple/Play hesabını kullanan bütün
+  /// uygulamalarda AYNIDIR. Bir kez "Hesap Varsayılanları"nda girilir, her yeni
+  /// uygulamada otomatik gelir. Geri kalan her şey (bundle id, AdMob birim
+  /// kimlikleri, API adresi) uygulamaya özeldir ve boş başlar.
+  static const Set<String> _accountKeys = {
+    'APPLE_TEAM_ID',
+    'ASC_KEY_ID',
+    'ASC_ISSUER_ID',
+    'ASC_KEY_FILEPATH',
+    'GOOGLE_PLAY_JSON_KEY',
+    'MATCH_GIT_URL',
+    'MATCH_PASSWORD',
+  };
+
+  /// Uygulamanın çalışması ve yayınlanması için gereken bütün anahtarların
+  /// tanımı. `.env` dosyasının kaynağı buradadır: her alanın nereden alınacağı
+  /// (help), ne olduğu (desc) ve sır mı / dosya mı olduğu tek yerde durur.
+  ///
+  /// Reklam UYGULAMA kimliği (ca-app-pub-…~…) bilinçli olarak burada değil:
+  /// o `.env`'e değil Info.plist/AndroidManifest'e yazılır (ayrı bir adım).
+  static const List<Map<String, dynamic>> _configGroups = [
+    {
+      'id': 'identity',
+      'title': 'Kimlik',
+      'note': 'Uygulamanın mağaza kimlikleri. Yayından sonra değişmez.',
+      'fields': [
+        {
+          'key': 'APP_IDENTIFIER',
+          'label': 'iOS bundle identifier',
+          'placeholder': 'com.sirketiniz.uygulama',
+          'desc': 'Xcode\'daki bundle id ile aynı olmalı.',
+        },
+        {
+          'key': 'ANDROID_PACKAGE_NAME',
+          'label': 'Android package name',
+          'placeholder': 'com.sirketiniz.uygulama',
+          'desc': 'build.gradle\'daki applicationId ile aynı.',
+        },
+        {
+          'key': 'APPLE_TEAM_ID',
+          'label': 'Apple Team ID',
+          'placeholder': 'XXXXXXXXXX',
+          'desc': 'Apple Developer hesabındaki 10 haneli takım kimliği.',
+          'help': 'https://developer.apple.com/account#MembershipDetailsCard',
+          'helpLabel': 'developer.apple.com › Membership',
+        },
+      ],
+    },
+    {
+      'id': 'asc',
+      'title': 'App Store Connect (iOS yayın)',
+      'note': 'App Store\'a 2FA sormadan yükleme yapan API anahtarı.',
+      'help': 'https://appstoreconnect.apple.com/access/integrations/api',
+      'helpLabel': 'App Store Connect › Integrations › API anahtarı oluştur',
+      'fields': [
+        {'key': 'ASC_KEY_ID', 'label': 'Key ID', 'placeholder': 'XXXXXXXXXX'},
+        {
+          'key': 'ASC_ISSUER_ID',
+          'label': 'Issuer ID',
+          'placeholder': 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+        },
+        {
+          'key': 'ASC_KEY_FILEPATH',
+          'label': 'API anahtar dosyası (.p8)',
+          'file': true,
+          'accept': '.p8',
+          'dest': 'ios/fastlane',
+          'desc': 'Oluştururken bir kez indirilir; kaybolursa yenisini üret.',
+        },
+      ],
+    },
+    {
+      'id': 'play',
+      'title': 'Google Play (Android yayın)',
+      'note': 'Play Console\'a yükleme yapan servis hesabı anahtarı.',
+      'help': 'https://play.google.com/console',
+      'helpLabel': 'Play Console › Setup › API access › service account',
+      'fields': [
+        {
+          'key': 'GOOGLE_PLAY_JSON_KEY',
+          'label': 'Servis hesabı anahtarı (.json)',
+          'file': true,
+          'accept': '.json',
+          'dest': 'android/fastlane',
+        },
+      ],
+    },
+    {
+      'id': 'admob',
+      'title': 'Reklam — AdMob birim kimlikleri',
+      'note': 'BOŞ bırakılırsa kod TEST reklamı gösterir (gelir sıfır). '
+          'Gerçek kimlikle geliştirip kendi reklamına tıklamak hesabı kapatır.',
+      'help': 'https://admob.google.com',
+      'helpLabel': 'admob.google.com › Uygulamalar › Reklam birimleri',
+      'fields': [
+        {'key': 'ADMOB_BANNER_IOS', 'label': 'Banner — iOS', 'placeholder': 'ca-app-pub-…/…'},
+        {'key': 'ADMOB_INTERSTITIAL_IOS', 'label': 'Geçiş reklamı — iOS', 'placeholder': 'ca-app-pub-…/…'},
+        {'key': 'ADMOB_BANNER_ANDROID', 'label': 'Banner — Android', 'placeholder': 'ca-app-pub-…/…'},
+        {'key': 'ADMOB_INTERSTITIAL_ANDROID', 'label': 'Geçiş reklamı — Android', 'placeholder': 'ca-app-pub-…/…'},
+      ],
+    },
+    {
+      'id': 'admob_app',
+      'title': 'Reklam — Uygulama kimliği',
+      'note': 'ca-app-pub-…~… biçimindeki UYGULAMA kimliği (reklam BİRİMİ '
+          'kimliğinden farklı, ~ işaretli). .env\'e değil doğrudan '
+          'Info.plist ve AndroidManifest.xml\'e yazılır. TEST kimliğiyle '
+          'yayınlanan uygulama çalışır ama HİÇ gelir getirmez.',
+      'help': 'https://admob.google.com',
+      'helpLabel': 'admob.google.com › Uygulamalar (uygulama kimliği ~ işaretli)',
+      'fields': [
+        {'key': 'ADMOB_APP_ID_IOS', 'label': 'iOS uygulama kimliği', 'native': 'ios', 'placeholder': 'ca-app-pub-…~…'},
+        {'key': 'ADMOB_APP_ID_ANDROID', 'label': 'Android uygulama kimliği', 'native': 'android', 'placeholder': 'ca-app-pub-…~…'},
+      ],
+    },
+    {
+      'id': 'backend',
+      'title': 'Backend',
+      'note': 'Uygulamanın konuştuğu API adresi (varsa).',
+      'fields': [
+        {'key': 'API_BASE_URL', 'label': 'API taban adresi', 'placeholder': 'https://api.sirketiniz.com'},
+      ],
+    },
+    {
+      'id': 'signing_ios',
+      'title': 'iOS imzalama — fastlane match (ileri düzey)',
+      'note': 'Sertifikaları makineler arası paylaşmak için. Boş bırakılırsa '
+          'Xcode otomatik imzalaması kullanılır (yalnızca bu Mac\'te).',
+      'help': 'https://docs.fastlane.tools/actions/match/',
+      'helpLabel': 'fastlane match dokümanı',
+      'fields': [
+        {'key': 'MATCH_GIT_URL', 'label': 'Sertifika deposu (private git)', 'placeholder': 'git@github.com:kullanici/certs.git'},
+        {'key': 'MATCH_PASSWORD', 'label': 'Sertifika şifresi', 'secret': true},
+      ],
+    },
+  ];
+
+  /// `.env`'i okur, şemayla birleştirir ve döndürür (GET) ya da gelen
+  /// değerleri `.env`'e yazar (POST). Sır alanların değeri GET'te maskelenir.
+  Future<Response> _config(Request request) async {
+    final path = request.url.queryParameters['path'];
+    if (path == null || path.isEmpty) {
+      return _json({'error': 'path parametresi gerekli'}, status: 400);
+    }
+    if (!File(p.join(path, 'pubspec.yaml')).existsSync()) {
+      return _json({'error': 'Proje bulunamadı: $path'}, status: 404);
+    }
+    final envPath = p.join(path, '.env');
+
+    if (request.method == 'POST') {
+      final body = await request.readAsString();
+      final Map<String, dynamic> data =
+          body.isEmpty ? {} : jsonDecode(body) as Map<String, dynamic>;
+      final incoming = (data['values'] as Map?)?.cast<String, dynamic>() ?? {};
+      // Yalnızca şemadaki anahtarları kabul et — .env'e keyfi satır girmesin.
+      final allowed = _allKeys();
+      final updates = <String, String>{}; // .env'e gidenler
+      final nativeUpdates = <String, String>{}; // native dosyalara gidenler
+      for (final entry in incoming.entries) {
+        if (!allowed.contains(entry.key)) continue;
+        // Satır sonu enjeksiyonunu kes.
+        final val = entry.value.toString().replaceAll(RegExp(r'[\r\n]'), ' ').trim();
+        if (_fieldSpec(entry.key)?['native'] != null) {
+          nativeUpdates[entry.key] = val;
+        } else {
+          updates[entry.key] = val;
+        }
+      }
+      // Hesap düzeyi SKALAR değerleri (Team ID, ASC Key/Issuer, match) her
+      // kayıtta sessizce projenin .env'ine yaz — panelde göstermeden. Böylece
+      // aynı bilgi iki yerde görünmez ama deploy için .env'de hazır olur.
+      final account = _readAccount();
+      for (final key in _accountKeys) {
+        final spec = _fieldSpec(key);
+        if (spec != null && spec['file'] == true) continue; // dosyalar ayrı
+        final v = account[key] ?? '';
+        if (v.isNotEmpty) updates[key] = v;
+      }
+      _writeEnv(envPath, updates);
+      // Hesap düzeyi dosyalar (.p8 / Play JSON) projede yoksa ve hesap
+      // varsayılanında varsa kopyala — böylece deploy tek Kaydet'le çalışır.
+      _applyAccountFilesToProject(path);
+      // AdMob uygulama kimliği .env'e değil native dosyalara yazılır.
+      final warnings = _applyNativeAdmob(path, nativeUpdates);
+      return _json({
+        'ok': true,
+        'saved': [...updates.keys, ...nativeUpdates.keys],
+        if (warnings.isNotEmpty) 'warnings': warnings,
+      });
+    }
+
+    // GET — HESAP düzeyi alanlar burada GÖSTERİLMEZ; onlar "Hesap
+    // Varsayılanları"nda yönetilir ve kayıtta sessizce .env'e yazılır. Burada
+    // yalnızca uygulamaya özel alanlar döner.
+    final existing = _readEnv(envPath);
+    final groups = <Map<String, dynamic>>[];
+    for (final g in _configGroups) {
+      final fields = <Map<String, dynamic>>[];
+      for (final f in (g['fields'] as List).cast<Map<String, dynamic>>()) {
+        final key = f['key'] as String;
+        if (_accountKeys.contains(key)) continue; // Hesap Varsayılanları'nda
+        final native = f['native'] as String?;
+        if (native != null) {
+          // Değer .env'de değil native dosyada (Info.plist / Manifest).
+          final v = _readNativeAdmob(path, native);
+          if (v == null) continue; // dosyada anahtar yok → alanı gösterme
+          fields.add({
+            ...f,
+            'value': v,
+            'set': v.isNotEmpty,
+            // Google'ın test yayıncı kimliği: çalışır ama gelir sıfır.
+            'test': v.contains('ca-app-pub-3940256099942544'),
+          });
+          continue;
+        }
+        final raw = existing[key] ?? '';
+        final isSecret = f['secret'] == true;
+        final isFile = f['file'] == true;
+        // Reklam BİRİMİ kimliği: boş ya da test yayıncısı → test reklamı,
+        // gelir sıfır. Kullanıcı hangi birimlerin geliri sıfır gördüğünü
+        // tek bakışta anlasın.
+        final isAdUnit = g['id'] == 'admob';
+        fields.add({
+          ...f,
+          'value': (isSecret || isFile) ? '' : raw,
+          'set': raw.isNotEmpty,
+          if (isFile && raw.isNotEmpty) 'fileName': p.basename(raw),
+          if (isAdUnit)
+            'test': raw.isEmpty || raw.contains('ca-app-pub-3940256099942544'),
+        });
+      }
+      // Bütün alanları elenen grubu (ör. reklam yoksa app id) hiç gösterme.
+      if (fields.isNotEmpty) groups.add({...g, 'fields': fields});
+    }
+    return _json({'root': path, 'envExists': File(envPath).existsSync(), 'groups': groups});
+  }
+
+  /// Yüklenen anahtar dosyasını (.p8 / .json) projedeki hedef klasöre yazar ve
+  /// `.env`'deki ilgili yolu günceller. Dosya içeriği ham gövde olarak gelir;
+  /// çok parçalı ayrıştırmaya gerek kalmaz.
+  Future<Response> _configUpload(Request request) async {
+    final q = request.url.queryParameters;
+    final path = q['path'];
+    final field = q['field'];
+    final fileName = q['filename'];
+    if (path == null || field == null || fileName == null) {
+      return _json({'error': 'path, field ve filename gerekli'}, status: 400);
+    }
+    // Alanı şemadan bul (hedef klasör ve dosya olup olmadığı oradan gelir).
+    final spec = _fieldSpec(field);
+    if (spec == null || spec['file'] != true) {
+      return _json({'error': 'Dosya alanı değil: $field'}, status: 400);
+    }
+    // Dosya adını güvenli hale getir — dizin geçişi olmasın.
+    final safeName = p.basename(fileName);
+    final destDir = spec['dest'] as String;
+    final relPath = './$destDir/$safeName';
+    final absDir = Directory(p.join(path, destDir));
+    absDir.createSync(recursive: true);
+    final bytes = await request.read().expand((c) => c).toList();
+    File(p.join(absDir.path, safeName)).writeAsBytesSync(bytes);
+    // .env'deki yolu ayarla.
+    _writeEnv(p.join(path, '.env'), {field: relPath});
+    return _json({'ok': true, 'field': field, 'path': relPath, 'fileName': safeName});
+  }
+
+  /// Native dosyadaki (Info.plist / AndroidManifest) mevcut AdMob uygulama
+  /// kimliği; dosya ya da anahtar yoksa `null`.
+  String? _readNativeAdmob(String path, String platform) {
+    final file = platform == 'ios'
+        ? File(p.join(path, 'ios/Runner/Info.plist'))
+        : File(p.join(path, 'android/app/src/main/AndroidManifest.xml'));
+    if (!file.existsSync()) return null;
+    final content = file.readAsStringSync();
+    return platform == 'ios'
+        ? readAdmobAppIdIos(content)
+        : readAdmobAppIdAndroid(content);
+  }
+
+  /// AdMob uygulama kimliğini native dosyalara yazar. Boş değerler atlanır.
+  /// Uygulanamayan yamaların açıklamasını (uyarı) döndürür.
+  List<String> _applyNativeAdmob(String path, Map<String, String> updates) {
+    final warnings = <String>[];
+    updates.forEach((key, value) {
+      if (value.isEmpty) return;
+      final platform = _fieldSpec(key)?['native'] as String?;
+      final file = platform == 'ios'
+          ? File(p.join(path, 'ios/Runner/Info.plist'))
+          : File(p.join(path, 'android/app/src/main/AndroidManifest.xml'));
+      if (!file.existsSync()) {
+        warnings.add('${file.path} bulunamadı.');
+        return;
+      }
+      final result = platform == 'ios'
+          ? setAdmobAppIdIos(file.readAsStringSync(), value)
+          : setAdmobAppIdAndroid(file.readAsStringSync(), value);
+      if (!result.ok) {
+        warnings.add('$platform: ${result.problem}');
+        return;
+      }
+      file.writeAsStringSync(result.content);
+    });
+    return warnings;
+  }
+
+  Set<String> _allKeys() => {
+        for (final g in _configGroups)
+          for (final f in (g['fields'] as List).cast<Map<String, dynamic>>())
+            f['key'] as String,
+      };
+
+  Map<String, dynamic>? _fieldSpec(String key) {
+    for (final g in _configGroups) {
+      for (final f in (g['fields'] as List).cast<Map<String, dynamic>>()) {
+        if (f['key'] == key) return f;
+      }
+    }
+    return null;
+  }
+
+  /// `.env`'i KEY=VALUE haritası olarak okur (tırnakları soyar). Yorumları ve
+  /// bilinmeyen satırları görmezden gelir.
+  Map<String, String> _readEnv(String envPath) {
+    final file = File(envPath);
+    if (!file.existsSync()) return {};
+    final map = <String, String>{};
+    for (final line in file.readAsLinesSync()) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
+      final eq = trimmed.indexOf('=');
+      if (eq <= 0) continue;
+      final key = trimmed.substring(0, eq).trim();
+      var value = trimmed.substring(eq + 1).trim();
+      if (value.length >= 2 &&
+          ((value.startsWith('"') && value.endsWith('"')) ||
+              (value.startsWith("'") && value.endsWith("'")))) {
+        value = value.substring(1, value.length - 1);
+      }
+      map[key] = value;
+    }
+    return map;
+  }
+
+  /// Verilen anahtarları `.env`'e yazar: var olan satırı değiştirir, yoksa
+  /// ekler; dosyadaki diğer satırları ve yorumları KORUR. Boş değer verilen
+  /// anahtarın satırı silinir (temiz kalsın diye).
+  void _writeEnv(String envPath, Map<String, String> updates) {
+    final file = File(envPath);
+    final lines = file.existsSync() ? file.readAsLinesSync() : <String>[];
+    final remaining = Map<String, String>.from(updates);
+    final out = <String>[];
+
+    String format(String key, String value) {
+      // Boşluk, # veya tırnak içeren değeri çift tırnakla sar.
+      final needsQuote = value.contains(' ') ||
+          value.contains('#') ||
+          value.contains('"') ||
+          value.contains("'");
+      final safe = value.replaceAll('"', r'\"');
+      return needsQuote ? '$key="$safe"' : '$key=$value';
+    }
+
+    for (final line in lines) {
+      final trimmed = line.trim();
+      final eq = trimmed.indexOf('=');
+      if (trimmed.isEmpty || trimmed.startsWith('#') || eq <= 0) {
+        out.add(line);
+        continue;
+      }
+      final key = trimmed.substring(0, eq).trim();
+      if (remaining.containsKey(key)) {
+        final value = remaining.remove(key)!;
+        if (value.isEmpty) continue; // boşsa satırı düşür
+        out.add(format(key, value));
+      } else {
+        out.add(line);
+      }
+    }
+    // Dosyada hiç olmayan yeni anahtarları sona ekle.
+    final added = remaining.entries.where((e) => e.value.isNotEmpty).toList();
+    if (added.isNotEmpty) {
+      if (out.isNotEmpty && out.last.trim().isNotEmpty) out.add('');
+      out.add('# forge panelinden eklendi');
+      for (final e in added) {
+        out.add(format(e.key, e.value));
+      }
+    }
+    file.writeAsStringSync('${out.join('\n')}\n');
+  }
+
+  // ------------------------------------------------------- hesap varsayılanları
+
+  /// Hesap düzeyi varsayılanların saklandığı dizin: ~/.forge (depo dışında,
+  /// makineye özel). Aynı Apple/Play hesabını kullanan tüm uygulamalar buradan
+  /// beslenir.
+  String get _accountDir {
+    final home = Platform.environment['HOME'] ??
+        Platform.environment['USERPROFILE'] ??
+        Directory.current.path;
+    return p.join(home, '.forge');
+  }
+
+  String get _accountJson => p.join(_accountDir, 'account.json');
+
+  Map<String, String> _readAccount() {
+    final f = File(_accountJson);
+    if (!f.existsSync()) return {};
+    try {
+      final m = jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
+      return m.map((k, v) => MapEntry(k, v.toString()));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  void _writeAccount(Map<String, String> updates) {
+    Directory(_accountDir).createSync(recursive: true);
+    final current = _readAccount();
+    for (final e in updates.entries) {
+      if (e.value.isEmpty) {
+        current.remove(e.key);
+      } else {
+        current[e.key] = e.value;
+      }
+    }
+    File(_accountJson)
+        .writeAsStringSync(const JsonEncoder.withIndent('  ').convert(current));
+  }
+
+  /// GET: yalnızca hesap düzeyi alanları döndürür. POST: onları ~/.forge'a yazar.
+  Future<Response> _account(Request request) async {
+    if (request.method == 'POST') {
+      final body = await request.readAsString();
+      final Map<String, dynamic> data =
+          body.isEmpty ? {} : jsonDecode(body) as Map<String, dynamic>;
+      final incoming = (data['values'] as Map?)?.cast<String, dynamic>() ?? {};
+      final updates = <String, String>{};
+      for (final e in incoming.entries) {
+        if (!_accountKeys.contains(e.key)) continue;
+        updates[e.key] =
+            e.value.toString().replaceAll(RegExp(r'[\r\n]'), ' ').trim();
+      }
+      _writeAccount(updates);
+      return _json({'ok': true, 'saved': updates.keys.toList()});
+    }
+
+    final saved = _readAccount();
+    final groups = <Map<String, dynamic>>[];
+    for (final g in _configGroups) {
+      final fields = <Map<String, dynamic>>[];
+      for (final f in (g['fields'] as List).cast<Map<String, dynamic>>()) {
+        final key = f['key'] as String;
+        if (!_accountKeys.contains(key)) continue;
+        final raw = saved[key] ?? '';
+        final isSecret = f['secret'] == true;
+        final isFile = f['file'] == true;
+        fields.add({
+          ...f,
+          'value': (isSecret || isFile) ? '' : raw,
+          'set': raw.isNotEmpty,
+          if (isFile && raw.isNotEmpty) 'fileName': p.basename(raw),
+        });
+      }
+      if (fields.isNotEmpty) groups.add({...g, 'fields': fields});
+    }
+    return _json({'groups': groups});
+  }
+
+  /// Hesap düzeyi dosyayı (.p8 / Play JSON) ~/.forge'a yazar ve yolu kaydeder.
+  Future<Response> _accountUpload(Request request) async {
+    final q = request.url.queryParameters;
+    final field = q['field'];
+    final fileName = q['filename'];
+    if (field == null || fileName == null) {
+      return _json({'error': 'field ve filename gerekli'}, status: 400);
+    }
+    final spec = _fieldSpec(field);
+    if (spec == null || spec['file'] != true || !_accountKeys.contains(field)) {
+      return _json({'error': 'Hesap dosya alanı değil: $field'}, status: 400);
+    }
+    final safeName = p.basename(fileName);
+    Directory(_accountDir).createSync(recursive: true);
+    final abs = p.join(_accountDir, safeName);
+    final bytes = await request.read().expand((c) => c).toList();
+    File(abs).writeAsBytesSync(bytes);
+    _writeAccount({field: abs});
+    return _json({'ok': true, 'field': field, 'fileName': safeName});
+  }
+
+  /// Hesap düzeyi dosyaları, projede henüz yoksa projeye kopyalar ve `.env`
+  /// yolunu ayarlar. Config kaydında çağrılır.
+  void _applyAccountFilesToProject(String path) {
+    final account = _readAccount();
+    final projectEnv = _readEnv(p.join(path, '.env'));
+    for (final key in _accountKeys) {
+      final spec = _fieldSpec(key);
+      if (spec == null || spec['file'] != true) continue;
+      final accFile = account[key] ?? '';
+      if (accFile.isEmpty) continue;
+      if ((projectEnv[key] ?? '').isNotEmpty) continue; // proje zaten dolu
+      final src = File(accFile);
+      if (!src.existsSync()) continue;
+      final destDir = spec['dest'] as String;
+      final name = p.basename(accFile);
+      final absDir = Directory(p.join(path, destDir))
+        ..createSync(recursive: true);
+      src.copySync(p.join(absDir.path, name));
+      _writeEnv(p.join(path, '.env'), {key: './$destDir/$name'});
+    }
+  }
+
+  // ------------------------------------------------------------ deploy
+
+  Response _deploy(Request request) {
+    final q = request.url.queryParameters;
+    final path = q['path'];
+    final platform = q['platform'];
+    final lane = q['lane'];
+    if (path == null || platform == null || lane == null) {
+      return _sseError('path, platform ve lane parametreleri gerekli');
+    }
+    if (!['ios', 'android', 'all'].contains(platform)) {
+      return _sseError('platform ios | android | all olmalı');
+    }
+    if (!['beta', 'release'].contains(lane)) {
+      return _sseError('lane beta | release olmalı');
+    }
+
+    final dryRun = q['dryrun'] != '0'; // varsayılan: deneme çalıştırması
+    // GERÇEK yükleme geri alınamaz ve dışa dönüktür. Bilinçli, ayrı bir
+    // onay olmadan asla başlatılmaz — panelin düğmesine basmak insanın
+    // işidir, panelin değil.
+    if (!dryRun && q['confirm'] != 'YAYINLA') {
+      return _sseError(
+        'Gerçek yükleme için onay gerekli. Bu geri alınamaz bir işlemdir; '
+        'panelde onay kutusunu doldurun.',
+      );
+    }
+
+    final deployScript = File(p.join(path, 'deploy.sh'));
+    if (!deployScript.existsSync()) {
+      return _sseError('deploy.sh bulunamadı: ${deployScript.path}');
+    }
+
+    // Sürüm notu (testçilere/mağazaya gösterilir). Tek argüman olarak geçer,
+    // kabuk araya girmez — kullanıcı metni güvenle taşınır.
+    final notes = q['notes'];
+
+    final args = [
+      'deploy.sh',
+      platform,
+      lane,
+      if (dryRun) '--dry-run',
+      if (notes != null && notes.trim().isNotEmpty) '--notes=${notes.trim()}',
+    ];
+    return _spawn('bash', args, workingDir: path);
+  }
+
+  // ----------------------------------------------------- süreç akıtma
+
+  /// Tek bir süreci başlatır — çok adımlı [_run] için ince sarmalayıcı.
+  Response _spawn(String executable, List<String> args,
+      {required String workingDir}) {
+    return _run([_Step(executable, args, workingDir)]);
+  }
+
+  /// Verilen adımları SIRAYLA çalıştırır ve stdout+stderr'ini satır satır SSE
+  /// olarak akıtır. Bir adım başarısız olursa (çıkış kodu ≠ 0) zincir orada
+  /// durur — örneğin `forge new` çökerse ardından `gh repo create` çalışmaz.
+  ///
+  /// Argümanlar bilinçli olarak dizi geçer, kabuğa değil: kullanıcının girdiği
+  /// ad/açıklama gibi değerlerin `bash -c` içinde komut enjeksiyonuna dönüşmesi
+  /// böyle imkânsız olur. Aynı anda yalnızca bir değiştiren iş çalışabilir.
+  Response _run(List<_Step> steps) {
+    if (_busy) {
+      return _sseError('Şu anda başka bir işlem çalışıyor. Bitmesini bekleyin.');
+    }
+    _busy = true;
+
+    final controller = StreamController<List<int>>();
+
+    void send(String event, Object data) {
+      if (controller.isClosed) return;
+      controller.add(utf8.encode('event: $event\n'
+          'data: ${jsonEncode(data)}\n\n'));
+    }
+
+    Future<int> runStep(_Step step) async {
+      final process = await Process.start(
+        step.executable,
+        step.args,
+        workingDirectory: step.workingDir,
+        // Çıktı karışsın ki sıra korunsun (fastlane hem stdout hem stderr
+        // kullanıyor). Yerel eksikse çocuk sürece UTF-8 enjekte edilir:
+        // CocoaPods/fastlane bunsuz çöker ve sunucunun nereden
+        // başlatıldığına bağlı olmamalı.
+        environment: _localeFix,
+        mode: ProcessStartMode.normal,
+      );
+
+      final lines = StreamController<String>();
+      process.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen(lines.add);
+      process.stderr
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen(lines.add);
+
+      final sub = lines.stream.listen((line) => send('line', {'text': line}));
+      final code = await process.exitCode;
+      await sub.cancel();
+      await lines.close();
+      return code;
+    }
+
+    Future<void> pump() async {
+      final multi = steps.length > 1;
+      var code = 0;
+      try {
+        for (var i = 0; i < steps.length; i++) {
+          final step = steps[i];
+          final cmd = '${step.executable} ${step.args.join(' ')}';
+          if (i == 0) {
+            send('start', {'cmd': cmd, 'cwd': step.workingDir});
+          } else {
+            // Adım başlığını konsola göze çarpan bir satır olarak yaz.
+            send('line', {'text': ''});
+            send('line', {
+              'text': '── adım ${i + 1}/${steps.length}'
+                  '${step.label != null ? ': ${step.label}' : ''} ──'
+            });
+            send('line', {'text': '\$ $cmd'});
+          }
+          code = await runStep(step);
+          if (code != 0) {
+            if (multi && i < steps.length - 1) {
+              send('line', {
+                'text': '❌ Adım başarısız (kod $code) — zincir durduruldu.'
+              });
+            }
+            break;
+          }
+        }
+        send('done', {'code': code, 'ok': code == 0});
+      } catch (e) {
+        send('line', {'text': '❌ Başlatılamadı: $e'});
+        send('done', {'code': -1, 'ok': false});
+      } finally {
+        _busy = false;
+        await controller.close();
+      }
+    }
+
+    // İstemci bağlantıyı keserse süreci öksüz bırakmamak için akışı kapat.
+    controller.onCancel = () {
+      _busy = false;
+    };
+    unawaited(pump());
+
+    return Response.ok(
+      controller.stream,
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+      context: {'shelf.io.buffer_output': false},
+    );
+  }
+
+  Response _sseError(String message) {
+    final body = 'event: line\ndata: ${jsonEncode({'text': '❌ $message'})}\n\n'
+        'event: done\ndata: ${jsonEncode({'code': -1, 'ok': false})}\n\n';
+    return Response.ok(body, headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+    });
+  }
+
+  // ----------------------------------------------------- statik dosyalar
+
+  Response _static(String path) {
+    final rel = path.isEmpty ? 'index.html' : path;
+    final file = File(p.join(_webDir, rel));
+    // Dizin dışına çıkma denemelerini engelle.
+    if (!p.isWithin(_webDir, file.path) && p.normalize(file.path) != p.join(_webDir, 'index.html')) {
+      if (!p.equals(file.parent.path, _webDir) && !p.isWithin(_webDir, file.path)) {
+        return Response.notFound('yok');
+      }
+    }
+    if (!file.existsSync()) return Response.notFound('yok');
+    return Response.ok(file.readAsBytesSync(),
+        headers: {'Content-Type': _contentType(rel)});
+  }
+
+  String _contentType(String path) {
+    if (path.endsWith('.html')) return 'text/html; charset=utf-8';
+    if (path.endsWith('.css')) return 'text/css; charset=utf-8';
+    if (path.endsWith('.js')) return 'text/javascript; charset=utf-8';
+    if (path.endsWith('.svg')) return 'image/svg+xml';
+    if (path.endsWith('.json')) return 'application/json; charset=utf-8';
+    return 'text/plain; charset=utf-8';
+  }
+
+  Response _json(Object data, {int status = 200}) => Response(
+        status,
+        body: jsonEncode(data),
+        headers: {'Content-Type': 'application/json; charset=utf-8'},
+      );
+}
+
+/// [_run] için tek bir komut adımı. Argümanlar dizidir; kabuk araya girmez.
+class _Step {
+  _Step(this.executable, this.args, this.workingDir, {this.label});
+  final String executable;
+  final List<String> args;
+  final String workingDir;
+
+  /// Konsolda adım başlığı olarak gösterilecek kısa etiket (çok adımlı işler).
+  final String? label;
+}
+
+/// forge deposunun kökünü bulur (pubspec.yaml → name: forge).
+///
+/// Panel deponun içinden çalıştırıldığı varsayımına GÜVENMEZ: betiğin
+/// bulunduğu yerden yukarı doğru arar.
+String resolveForgeRoot() {
+  var dir = Directory(p.dirname(Platform.script.toFilePath()));
+  for (var i = 0; i < 6; i++) {
+    final pubspec = File(p.join(dir.path, 'pubspec.yaml'));
+    if (pubspec.existsSync() &&
+        pubspec.readAsStringSync().contains('name: forge')) {
+      return dir.path;
+    }
+    final parent = dir.parent;
+    if (parent.path == dir.path) break;
+    dir = parent;
+  }
+  // Son çare: çalışma dizini.
+  return Directory.current.path;
+}

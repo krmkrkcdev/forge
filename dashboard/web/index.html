@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>forge · kontrol paneli</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔨</text></svg>" />
+</head>
+<body>
+  <div id="app">
+    <!-- Kenar çubuğu: projeler -->
+    <aside id="sidebar">
+      <header class="brand">
+        <span class="hammer">🔨</span>
+        <div>
+          <h1>forge</h1>
+          <p id="base-path" class="muted">taranıyor…</p>
+        </div>
+      </header>
+
+      <button id="new-app-btn" class="primary block">＋ Yeni uygulama</button>
+      <button id="account-btn" class="ghost block">⚙ Hesap Varsayılanları</button>
+
+      <div id="gh-banner" class="gh-banner" hidden>
+        <span id="gh-banner-text"></span>
+        <button id="gh-login-btn" class="primary block" hidden>GitHub girişi yap</button>
+      </div>
+
+      <div class="list-head">
+        <span>Projeler</span>
+        <button id="refresh-btn" class="ghost icon" title="Yenile">⟳</button>
+      </div>
+      <ul id="project-list"><li class="muted pad">Yükleniyor…</li></ul>
+    </aside>
+
+    <!-- Ana panel -->
+    <main id="main">
+      <div id="empty-state" class="empty">
+        <div class="hammer-big">🔨</div>
+        <h2>Bir proje seçin</h2>
+        <p class="muted">Soldan bir uygulama seçin ya da yeni bir tane başlatın.<br>
+          Denetleyin, güncelleyin, build alın, TestFlight'a gönderin.</p>
+      </div>
+
+      <section id="project-view" hidden>
+        <header id="project-header">
+          <div>
+            <h2 id="pv-name">—</h2>
+            <p id="pv-sub" class="muted">—</p>
+          </div>
+          <div id="pv-badges" class="badges"></div>
+        </header>
+
+        <!-- Sekmeler -->
+        <div class="tabbar">
+          <button id="tab-actions" class="tab active" data-tab="actions">⚡ Eylemler</button>
+          <button id="tab-config" class="tab" data-tab="config">🔑 Yapılandırma</button>
+          <button id="tab-guide" class="tab" data-tab="guide">🗺 Yol Haritası</button>
+        </div>
+
+        <div id="actions-view">
+        <!-- Yayına hazırlık özeti -->
+        <section id="readiness"></section>
+
+        <!-- Eylemler -->
+        <div class="actions">
+          <div class="action-group">
+            <h3>Denetim</h3>
+            <p class="group-note">Projeyi denetler ve düzeltir. Yalnızca yerel dosyalara bakar; mağazayla konuşmaz.</p>
+            <div class="act-item">
+              <button data-act="doctor" class="secondary">🔎 forge doctor</button>
+              <small class="hint">Proje mağaza yayınına hazır mı diye tarar. <strong>Hiçbir şeyi değiştirmez</strong> — sadece engel ve uyarıları listeler.</small>
+            </div>
+            <div class="act-item">
+              <button data-act="fix-dry" class="secondary">🩹 Düzelt (önizleme)</button>
+              <small class="hint">Otomatik düzeltilebilecek şeyleri <strong>gösterir ama dosyaya yazmaz</strong>. Önce bunu çalıştır.</small>
+            </div>
+            <div class="act-item">
+              <button data-act="fix-apply" class="warn">🩹 Düzeltmeleri uygula</button>
+              <small class="hint">Tek doğru cevabı olan düzeltmeleri <strong>diske yazar</strong>. İmzalama/kimlik gibi karar gerektiren şeylere dokunmaz.</small>
+            </div>
+          </div>
+
+          <div class="action-group">
+            <h3>Geliştirme</h3>
+            <p class="group-note">Uygulamanın paket bağımlılıklarını yönetir.</p>
+            <div class="act-item">
+              <button data-act="update" class="secondary">🔄 Güncelle (pub get)</button>
+              <small class="hint"><code>pubspec.yaml</code>'da yazılı paketleri indirir/çözer. <strong>Sürümleri değiştirmez</strong> — eksikleri kurar. Yeni paket ekleyince ya da projeyi ilk açınca.</small>
+            </div>
+            <div class="act-item">
+              <button data-act="upgrade" class="secondary">⬆️ Sürümleri yükselt</button>
+              <small class="hint">Paketleri, <code>pubspec.yaml</code>'ın izin verdiği <strong>en yeni sürümlere</strong> çıkarır ve <code>pubspec.lock</code>'u günceller.</small>
+            </div>
+          </div>
+
+          <div class="action-group plat-ios">
+            <h3>🍎 iOS — Build & Yayın</h3>
+            <p class="group-note">TestFlight ve App Store yolu. <strong>Android'den bağımsızdır</strong> — oradaki bir eksik bu akışı durdurmaz.</p>
+            <div class="act-item">
+              <button data-act="build-ios" class="secondary">🧪 Build al (deneme)</button>
+              <small class="hint">Derler, imzalı arşiv üretir, <strong>HİÇBİR YERE YÜKLEMEZ</strong>. Build numarasını <strong>+1</strong> artırır.</small>
+            </div>
+            <div class="act-item">
+              <button data-act="beta-ios" class="publish">🚀 TestFlight'a gönder</button>
+              <small class="hint"><strong>Gerçek yükleme:</strong> build TestFlight'a çıkar, sadece testçilere gider; mağazada herkese açılmaz.</small>
+            </div>
+            <div class="act-item">
+              <button data-act="release-ios" class="danger">📦 App Store'a yükle</button>
+              <small class="hint"><strong>Yeni bir build</strong> derleyip binary'yi ASC build havuzuna yükler (Transporter işi). Sürüme eklemez, <strong>incelemeye göndermez</strong> — ASC'de "+ Build" ile ekleyip Submit'e sen basarsın. <strong>Not:</strong> TestFlight'ta test ettiğin build'i yayınlayacaksan bu butona gerek yok — aynı havuzdadır, ASC'de doğrudan sürüme ekle. Bu buton kod değiştiyse (yeni build gerekince) kullanılır; release denetimi daha sıkıdır (uyarılar da engel).</small>
+            </div>
+          </div>
+
+          <div class="action-group plat-android">
+            <h3>🤖 Android — Build & Yayın</h3>
+            <p class="group-note">Google Play yolu. <strong>iOS'tan bağımsızdır</strong> — oradaki bir eksik bu akışı durdurmaz.</p>
+            <div class="act-item">
+              <button data-act="build-android" class="secondary">🧪 Build al (deneme)</button>
+              <small class="hint">App Bundle derler, <strong>HİÇBİR YERE YÜKLEMEZ</strong>. Çıktı: <code>build/app/outputs/bundle/release/app-release.aab</code>. Build numarasını <strong>+1</strong> artırır.</small>
+            </div>
+            <div class="act-item">
+              <button data-act="beta-android" class="publish">🚀 Play Beta'ya gönder</button>
+              <small class="hint"><strong>Gerçek yükleme:</strong> Play Store <strong>beta kanalına</strong> çıkar, sadece testçilere gider.</small>
+            </div>
+            <div class="act-item">
+              <button data-act="release-android" class="danger">📦 Play'e yükle (taslak)</button>
+              <small class="hint">App Bundle'ı Production kanalına <strong>taslak</strong> olarak yükler. <strong>Yayınlamaz</strong> — Play Console'da yayını sen başlatırsın. Uygulama kaydı konsolda <strong>zaten var olmalı</strong>.</small>
+            </div>
+          </div>
+        </div>
+
+        <!-- Doctor sonuçları -->
+        <section id="doctor-panel" hidden>
+          <div id="doctor-summary" class="summary"></div>
+          <ul id="findings"></ul>
+        </section>
+        </div><!-- /actions-view -->
+
+        <!-- Yapılandırma: anahtarlar + dosyalar -->
+        <section id="config-view" hidden>
+          <div id="config-body"><p class="muted pad">Yükleniyor…</p></div>
+        </section>
+
+        <!-- Yol haritası: oluşturmadan incelemeye adım adım rehber -->
+        <section id="guide-view" hidden>
+          <div id="guide-body"><p class="muted pad">Yükleniyor…</p></div>
+        </section>
+      </section>
+
+      <!-- Canlı konsol -->
+      <section id="console-wrap" hidden>
+        <header class="console-head">
+          <span id="console-title">Konsol</span>
+          <span id="console-status" class="status"></span>
+          <button id="console-clear" class="ghost">Temizle</button>
+        </header>
+        <pre id="console"></pre>
+      </section>
+    </main>
+  </div>
+
+  <!-- Yeni uygulama kipi -->
+  <dialog id="new-dialog">
+    <form method="dialog" id="new-form">
+      <h2>🔨 Yeni uygulama</h2>
+      <p class="muted small">Mağazaya hazır bir Flutter iskeleti üretir — <code>forge doctor</code>
+        ilk günden temiz çıkar.</p>
+
+      <label>Proje adı <span class="req">*</span>
+        <input name="name" placeholder="not_defteri" required
+               pattern="[a-z][a-z0-9_]*" title="küçük harf, rakam, alt çizgi" />
+        <small class="muted">Dart paket adı: küçük harf ve alt çizgi.</small>
+      </label>
+
+      <label>Ters alan adı (--org) <span class="req">*</span>
+        <input name="org" placeholder="com.sirketiniz" required
+               pattern="[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+" title="ör. com.sirketiniz" />
+        <small class="muted">Paket kimliği bundan türer ve <strong>yayından sonra değişmez</strong>.</small>
+      </label>
+
+      <label>Görünen ad
+        <input name="appName" placeholder="Not Defteri" />
+      </label>
+
+      <label>Açıklama
+        <input name="description" placeholder="Basit bir not uygulaması." />
+      </label>
+
+      <label>Nereye kurulsun (üst dizin) <span class="req">*</span>
+        <input name="parent" id="new-parent" required />
+        <small class="muted">Proje bu dizinin altında <code>&lt;ad&gt;/app</code> olarak oluşur.</small>
+      </label>
+
+      <fieldset class="gh-box">
+        <label class="row">
+          <input type="checkbox" name="backend" id="backend-check" />
+          <span>Backend ekle (FastAPI + PostgreSQL)</span>
+        </label>
+        <small class="muted">Çevrimdışı öncelikli senkron sunucusu:
+          <code>backend/</code> altında Docker'la çalışan API + veritabanı.</small>
+      </fieldset>
+
+      <fieldset class="gh-box">
+        <label class="row">
+          <input type="checkbox" name="github" id="gh-check" checked />
+          <span>GitHub'da repo oluştur ve bağla</span>
+        </label>
+        <small class="muted">Yerel iskelet üretilir, ardından
+          <code>gh repo create --push</code> ile hesabında yeni bir repo açılıp
+          kod gönderilir. (Bir kez <code>gh auth login</code> gerekir.)</small>
+        <label class="vis" id="gh-vis-label">Görünürlük
+          <select name="visibility" id="gh-vis">
+            <option value="private" selected>Private (önerilir)</option>
+            <option value="public">Public</option>
+          </select>
+        </label>
+      </fieldset>
+
+      <div class="dialog-actions">
+        <button value="cancel" class="ghost">Vazgeç</button>
+        <button value="create" class="primary" id="new-submit">Oluştur</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Hesap varsayılanları kipi -->
+  <dialog id="account-dialog" class="wide">
+    <h2>⚙ Hesap Varsayılanları</h2>
+    <p class="muted small">Aynı Apple / Google Play hesabını kullanan bütün
+      uygulamalarda AYNI olan bilgiler. Bir kez doldur — her yeni uygulamada
+      otomatik gelir. <code>~/.forge</code> altında saklanır, git'e girmez.</p>
+    <div id="account-body"><p class="muted pad">Yükleniyor…</p></div>
+    <div class="dialog-actions">
+      <button class="ghost" id="account-close">Kapat</button>
+      <button class="primary" id="account-save">Kaydet</button>
+      <span id="account-status" class="muted"></span>
+    </div>
+  </dialog>
+
+  <!-- Yayın onayı kipi -->
+  <dialog id="confirm-dialog">
+    <form method="dialog">
+      <h2 id="confirm-title">Onay</h2>
+      <p id="confirm-body" class="small"></p>
+      <label id="confirm-notes-box" hidden>
+        Sürüm notu (testçilere / mağazaya gösterilir, boş bırakılabilir):
+        <textarea id="confirm-notes" rows="3"
+          placeholder="Örn. Saat seçimi eklendi, birkaç hata düzeltildi."></textarea>
+      </label>
+      <label id="confirm-typebox" hidden>
+        Onaylamak için <code>YAYINLA</code> yazın:
+        <input id="confirm-input" autocomplete="off" />
+      </label>
+      <div class="dialog-actions">
+        <button value="cancel" class="ghost">Vazgeç</button>
+        <button value="ok" class="danger" id="confirm-ok">Devam et</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
