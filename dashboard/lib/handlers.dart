@@ -1190,7 +1190,12 @@ class Handlers {
         // kullanıyor). Yerel eksikse çocuk sürece UTF-8 enjekte edilir:
         // CocoaPods/fastlane bunsuz çöker ve sunucunun nereden
         // başlatıldığına bağlı olmamalı.
-        environment: _localeFix,
+        //
+        // PWD açıkça verilir: launchd altında panele "PWD=." gibi bozuk bir
+        // değer miras kalabiliyor; bash bunu geçerli sayıp "$PWD/..." ile
+        // kurulan yolları görünmez biçimde göreli bırakıyor (deploy.sh'ın
+        // .p8 yolu böyle kırılmıştı).
+        environment: {..._localeFix, 'PWD': step.workingDir},
         mode: ProcessStartMode.normal,
       );
 
@@ -1287,8 +1292,12 @@ class Handlers {
       }
     }
     if (!file.existsSync()) return Response.notFound('yok');
-    return Response.ok(file.readAsBytesSync(),
-        headers: {'Content-Type': _contentType(rel)});
+    return Response.ok(file.readAsBytesSync(), headers: {
+      'Content-Type': _contentType(rel),
+      // Panel yerel bir geliştirme aracı: tarayıcının bayat JS/CSS
+      // önbelleği "eski kod çalışıyor" karışıklığına yol açıyor.
+      'Cache-Control': 'no-store',
+    });
   }
 
   String _contentType(String path) {

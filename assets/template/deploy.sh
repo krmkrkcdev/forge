@@ -110,7 +110,10 @@ if [ "$PLATFORM" = "ios" ] || [ "$PLATFORM" = "all" ]; then
   # Mutlaklaştırıp export ediyoruz ki .env okunaklı kalsın.
   case "$ASC_KEY_FILEPATH" in
     /*) ;;
-    *) ASC_KEY_FILEPATH="$PWD/${ASC_KEY_FILEPATH#./}" ;;
+    # $PWD degil $(pwd -P): launchd altindan gelen surecte PWD "." gibi
+    # bozuk bir degerle miras kalabiliyor ve bash bunu gecerli sayiyor —
+    # sonuc yine goreli bir yol oluyor, fastlane ios/ icinden bulamiyor.
+    *) ASC_KEY_FILEPATH="$(pwd -P)/${ASC_KEY_FILEPATH#./}" ;;
   esac
   export ASC_KEY_FILEPATH
 
@@ -132,7 +135,8 @@ if [ "$PLATFORM" = "android" ] || [ "$PLATFORM" = "all" ]; then
   # iOS tarafındaki ile aynı sebep: fastlane android/ içinden çalışır.
   case "$GOOGLE_PLAY_JSON_KEY" in
     /*) ;;
-    *) GOOGLE_PLAY_JSON_KEY="$PWD/${GOOGLE_PLAY_JSON_KEY#./}" ;;
+    # iOS tarafindaki ile ayni sebep: $PWD'ye guvenme (bkz. yukarisi).
+    *) GOOGLE_PLAY_JSON_KEY="$(pwd -P)/${GOOGLE_PLAY_JSON_KEY#./}" ;;
   esac
   export GOOGLE_PLAY_JSON_KEY
 
@@ -144,6 +148,21 @@ if [ "$PLATFORM" = "android" ] || [ "$PLATFORM" = "all" ]; then
     echo "   paketi kabul etmez. Kurulum: android/key.properties.example"
     exit 1
   fi
+fi
+
+# ---------- Ruby / bundler ön kontrolü ----------
+# Fastlane "bundle exec" ile çalışır. PATH'te yanlış Ruby varsa (örn. panel
+# launchd servisiyken sistem Ruby'sinin /usr/bin/bundle'ı) bundler Gemfile.lock
+# sürümünü bulamaz — ve bu hata dakikalarca süren build'den SONRA patlar.
+# Burada 2 saniyede, build harcamadan yakalıyoruz.
+if ! bundle exec fastlane --version >/dev/null 2>&1; then
+  echo "❌ 'bundle exec fastlane' çalıştırılamadı."
+  echo "   Kullanılan bundle: $(command -v bundle || echo bulunamadı)"
+  echo "   Olası nedenler ve çözümler:"
+  echo "   • PATH'te yanlış Ruby: doğru Ruby'nin bin dizinini PATH'e ekleyin"
+  echo "     (panel launchd ile çalışıyorsa plist'teki PATH'e de)."
+  echo "   • Gem'ler eksik: bundle install"
+  exit 1
 fi
 
 # Fastlane'in dry-run modunu görmesi için dışa aktar

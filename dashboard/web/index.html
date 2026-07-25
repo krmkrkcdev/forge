@@ -4,7 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>forge · kontrol paneli</title>
-  <link rel="stylesheet" href="styles.css" />
+  <!-- ?v= damgası: tarayıcıda bayat kalmış eski dosyayı kesin aşar. -->
+  <link rel="stylesheet" href="styles.css?v=2" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔨</text></svg>" />
 </head>
 <body>
@@ -148,16 +149,25 @@
         </section>
       </section>
 
-      <!-- Canlı konsol -->
-      <section id="console-wrap" hidden>
+      <!-- Canlı konsol. Her zaman görünür: "konsol var mı yok mu" sorusu
+           yaşanmasın. flex-shrink:0 olmadan bu kutu uzun sayfada sıfıra
+           küçülüp görünmez oluyordu — styles.css'teki nota bakın. -->
+      <section id="console-wrap">
         <header class="console-head">
           <span id="console-title">Konsol</span>
-          <span id="console-status" class="status"></span>
+          <span id="console-status" class="status idle">boşta</span>
           <button id="console-clear" class="ghost">Temizle</button>
         </header>
-        <pre id="console"></pre>
+        <pre id="console" class="idle">Henüz bir işlem çalıştırılmadı. Başlattığınız her işlemin çıktısı burada canlı akar.</pre>
       </section>
     </main>
+  </div>
+
+  <!-- Yüzen işlem rozeti: hangi sekmede/kaydırmada olursanız olun işlemin
+       sürdüğünü ve sonucunu (✓/✗) gösterir; tıklayınca konsola iner. -->
+  <div id="run-pill" hidden>
+    <span class="dot"></span>
+    <span id="run-pill-text"></span>
   </div>
 
   <!-- Yeni uygulama kipi -->
@@ -259,6 +269,6 @@
     </form>
   </dialog>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=2"></script>
 </body>
 </html>

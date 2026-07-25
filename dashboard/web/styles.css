@@ -243,7 +243,10 @@ dialog.wide .cfg-group { background: var(--bg-3); }
 .preflight { display: block; margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: rgba(210,153,34,.12); border: 1px solid rgba(210,153,34,.4); color: var(--yellow); font-size: 12.5px; line-height: 1.55; }
 
 /* ---------------- konsol ---------------- */
-#console-wrap { background: #05070a; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-top: auto; }
+/* flex-shrink: 0 şart: #main dikey bir flex kabı ve içerik ekrandan uzunken
+   flex, overflow:hidden'lı bu kutuyu SIFIRA kadar küçültebiliyor — konsol
+   "var ama görünmez" oluyordu. */
+#console-wrap { background: #05070a; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-top: auto; flex-shrink: 0; }
 .console-head { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: var(--bg-2); border-bottom: 1px solid var(--border); }
 #console-title { font-weight: 600; font-size: 12px; }
 .status { font-size: 11px; padding: 2px 8px; border-radius: 999px; }
@@ -251,7 +254,28 @@ dialog.wide .cfg-group { background: var(--bg-3); }
 .status.ok { background: #133a1e; color: #7ee787; }
 .status.fail { background: #3a1518; color: #ff9a92; }
 .console-head .ghost { margin-left: auto; font-size: 11px; }
-#console { margin: 0; padding: 12px 14px; max-height: 300px; overflow-y: auto; font-family: var(--mono); font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; color: #c9d4e0; }
+#console { margin: 0; padding: 12px 14px; max-height: min(340px, 45vh); overflow-y: auto; font-family: var(--mono); font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; color: #c9d4e0; }
+#console.idle { color: var(--muted); font-style: italic; }
+.status.idle { background: var(--bg-3); color: var(--muted); }
+
+/* Yüzen işlem rozeti: sayfanın neresinde olursan ol işlemin sürdüğünü ve
+   sonucunu gösterir; tıklayınca konsola iner. */
+#run-pill {
+  position: fixed; right: 18px; bottom: 18px; z-index: 50;
+  display: flex; align-items: center; gap: 9px; padding: 9px 16px;
+  border-radius: 999px; background: var(--bg-2); border: 1px solid var(--border);
+  box-shadow: 0 6px 20px rgba(0,0,0,.55); cursor: pointer;
+  font-size: 12.5px; font-weight: 600; max-width: min(420px, 70vw);
+}
+#run-pill .dot { width: 9px; height: 9px; border-radius: 999px; flex-shrink: 0; background: var(--muted); }
+#run-pill.running { border-color: var(--yellow); }
+#run-pill.running .dot { background: var(--yellow); animation: pill-pulse 1s ease-in-out infinite; }
+#run-pill.ok { border-color: var(--green); }
+#run-pill.ok .dot { background: var(--green); }
+#run-pill.fail { border-color: var(--red); }
+#run-pill.fail .dot { background: var(--red); }
+#run-pill span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes pill-pulse { 50% { opacity: .25; } }
 
 /* ---------------- kipler ---------------- */
 dialog { background: var(--bg-2); color: var(--text); border: 1px solid var(--border); border-radius: 14px; padding: 22px; width: min(460px, 92vw); }

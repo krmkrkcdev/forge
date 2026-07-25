@@ -234,7 +234,9 @@ function openConsole(title) {
   const st = $('#console-status');
   st.textContent = 'çalışıyor…';
   st.className = 'status running';
-  $('#console').textContent = '';
+  const c = $('#console');
+  c.classList.remove('idle'); // açılıştaki "henüz işlem yok" yer tutucusu
+  c.textContent = '';
   $('#console-wrap').scrollIntoView({ behavior: 'smooth', block: 'end' });
 }
 
@@ -244,15 +246,41 @@ function log(text) {
   el.scrollTop = el.scrollHeight;
 }
 
+// Yüzen işlem rozeti: konsol ekran dışında kalsa bile işlemin sürdüğü ve
+// sonucu (✓/✗) her zaman görünür. Tıklayınca konsola iner.
+let _pillTimer = null;
+function runPill(kind, text) {
+  const pill = $('#run-pill');
+  clearTimeout(_pillTimer);
+  pill.hidden = false;
+  pill.className = kind; // running | ok | fail
+  $('#run-pill-text').textContent = text;
+  // Başarı kendiliğinden kaybolur; hata, kullanıcı görene kadar kalır.
+  if (kind === 'ok') {
+    _pillTimer = setTimeout(() => { pill.hidden = true; }, 6000);
+  }
+}
+function hideRunPill() {
+  clearTimeout(_pillTimer);
+  $('#run-pill').hidden = true;
+}
+
 // Bir SSE ucunu açar ve konsola akıtır. Bittiğinde projeleri tazeler.
 function stream(url, title) {
   if (state.running) {
-    alert('Şu anda başka bir işlem çalışıyor. Bitmesini bekleyin.');
+    // alert() KULLANMA: kip pencere JS'i dondurur ve akan SSE satırlarının
+    // işlenmesini de durdurur — konsol "takıldı" gibi görünürdü.
+    runPill('fail', 'Başka bir işlem çalışıyor — bitmesini bekleyin');
+    _pillTimer = setTimeout(() => {
+      if (state.running) runPill('running', $('#console-title').textContent);
+      else hideRunPill();
+    }, 3000);
     return;
   }
   state.running = true;
   setBusy(true);
   openConsole(title);
+  runPill('running', title);
 
   const es = new EventSource(url);
   state.es = es;
@@ -268,6 +296,9 @@ function stream(url, title) {
     const st = $('#console-status');
     st.textContent = d.ok ? '✓ tamamlandı' : `✗ hata (kod ${d.code})`;
     st.className = 'status ' + (d.ok ? 'ok' : 'fail');
+    runPill(d.ok ? 'ok' : 'fail',
+      (d.ok ? '✓ ' : '✗ ') + $('#console-title').textContent
+        + (d.ok ? ' — tamamlandı' : ' — HATA (konsola bak)'));
     finishStream();
     if (d.ok) {
       loadProjects();
@@ -284,6 +315,8 @@ function stream(url, title) {
       if (st.className.indexOf('running') !== -1) {
         st.textContent = '✗ bağlantı kesildi';
         st.className = 'status fail';
+        runPill('fail', '✗ ' + $('#console-title').textContent
+          + ' — bağlantı kesildi');
       }
       finishStream();
     }
@@ -964,6 +997,10 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#account-save').addEventListener('click', saveAccount);
   $('#account-close').addEventListener('click', () => $('#account-dialog').close());
   $('#console-clear').addEventListener('click', () => ($('#console').textContent = ''));
+  $('#run-pill').addEventListener('click', () => {
+    $('#console-wrap').scrollIntoView({ behavior: 'smooth', block: 'end' });
+    if (!state.running) hideRunPill();
+  });
 
   $$('#project-view button[data-act]').forEach((b) =>
     b.addEventListener('click', () => act(b.dataset.act)));
