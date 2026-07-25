@@ -49,7 +49,7 @@ platform :android do
     )
   end
 
-  desc "Play Store Production'a yükle (PLAY_ROLLOUT ile kademeli dağıtım yapılabilir)"
+  desc "Play Store Production'a TASLAK yükle (yayınlamayı insan yapar)"
   lane :release do
     write_changelog
 
@@ -58,28 +58,25 @@ platform :android do
       next
     end
 
-    # PLAY_ROLLOUT=0.1 -> kullanıcıların %10'una aç (kademeli yayın).
-    # Tanımlı değilse doğrudan %100 yayınlanır.
-    rollout = ENV["PLAY_ROLLOUT"]
-    staged  = !rollout.to_s.empty? && rollout.to_f < 1.0
-
-    if staged
-      UI.important("Kademeli yayın: kullanıcıların %#{(rollout.to_f * 100).round}'ine açılıyor.")
-    end
-
-    params = {
+    # release_status: "draft" — App Bundle Production kanalına TASLAK olarak
+    # yüklenir ama YAYINLANMAZ. Bilinçli: kademeli dağıtım yüzdesini seçmek ve
+    # "Yayınla"ya basmak, listelemeyi gözden geçirmiş bir insanın işidir.
+    # Play Console → Production → taslak sürümü açıp yayınlarsınız.
+    #
+    # Not: uygulamanın Play Console'da ZATEN oluşturulmuş olması gerekir;
+    # bu lane uygulamayı oluşturmaz, yalnızca App Bundle yükler.
+    upload_to_play_store(
       track: "production",
       aab: AAB_PATH,
-      release_status: staged ? "inProgress" : "completed",
+      release_status: "draft",
       skip_upload_apk: true,
       skip_upload_metadata: true,
       skip_upload_images: true,
       skip_upload_screenshots: true,
       skip_upload_changelogs: false
-    }
-    params[:rollout] = rollout.to_s if staged
-
-    upload_to_play_store(params)
+    )
+    UI.success("App Bundle taslak olarak yüklendi. Play Console'da " \
+               "yayını siz başlatın.")
   end
 
 end

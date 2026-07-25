@@ -81,9 +81,14 @@ String generateBundle() {
     final bytes = File(p.join(_assetRoot, path)).readAsBytesSync();
     final encoded = base64.encode(bytes);
     buffer.writeln("  '$path':");
-    // Uzun satırlar diff'i okunmaz kılar; sabit genişlikte bölüyoruz.
-    for (final chunk in _chunks(encoded, 70)) {
-      buffer.writeln("      '$chunk'");
+    if (encoded.isEmpty) {
+      // Boş dosya (ör. __init__.py): geçerli Dart için yine bir değer gerekir.
+      buffer.writeln("      ''");
+    } else {
+      // Uzun satırlar diff'i okunmaz kılar; sabit genişlikte bölüyoruz.
+      for (final chunk in _chunks(encoded, 70)) {
+        buffer.writeln("      '$chunk'");
+      }
     }
     buffer.writeln('      ,');
   }

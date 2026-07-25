@@ -29,6 +29,11 @@ void main() {
       final placed = {...scaffold.fileMap.keys, ...ProjectScaffold.spliced};
 
       for (final path in templatePaths) {
+        // backend/ alt ağacı ve app sözleşme testi fileMap yerine
+        // copyBackend() döngüsüyle yerleştirilir (bkz. scaffold.dart).
+        if (path.startsWith('backend/') || path == 'contract_test.dart') {
+          continue;
+        }
         expect(
           placed,
           contains(path),

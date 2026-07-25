@@ -175,12 +175,69 @@ bilinen tuzaklar. `forge new` bunu projeye kendisi koyar.
 Önemli kural: **ajan mağazaya yükleme yapmaz.** Geri alınamaz ve dışa dönük
 bir işlemdir; gerçek yüklemeyi insan başlatır.
 
+## Backend (`forge new --backend`)
+
+İsteğe bağlı bir sunucu katmanı üretir: **FastAPI + PostgreSQL + Docker**.
+Panelde "Yeni uygulama" formundaki **Backend ekle** kutusu da aynı şeyi yapar.
+
+```bash
+forge new not_defteri --org com.sirket --backend
+cd not_defteri/backend && docker compose up --build   # API :8000, /docs
+```
+
+Felsefe `AGENTS.md`'deki ile aynı — **çevrimdışı öncelikli**: telefondaki
+veritabanı ana kaynak, sunucu bir yedek ve senkron katmanı. Bu yüzden uçlar
+sade: `GET /health`, `POST /sync/push` (son-yazan-kazanır), `GET /sync/pull`.
+Kimlikler istemcide üretilir, silmeler mezar taşıyla senkronlanır.
+
+Üretilen `backend/` kendi testiyle gelir (docker gerekmeden, bellek içi SQLite):
+`cd backend && pip install -r requirements-dev.txt && pytest`. Ayrıca app
+tarafına `test/api_contract_test.dart` konur — çalışan sunucuya karşı koşar.
+
+Çekirdek iskelettir; kimlik doğrulama, yeni kaynaklar ve gelişmiş çakışma
+çözümü `backend/README.md`'de anlatıldığı gibi üzerine eklenir.
+
+## Kontrol paneli
+
+Komut satırının tamamı tarayıcıdan da yönetilebilir. Panel, forge'un yaptığı
+her işi (denetle, düzelt, güncelle, build al, yayınla, yeni proje başlat) tek
+ekranda toplar ve çıktıyı canlı akıtır.
+
+```bash
+dart run dashboard/serve.dart
+```
+
+Tarayıcı `http://localhost:4577` adresinde kendiliğinden açılır. Panel üst
+dizindeki bütün Flutter projelerini tarar; başka bir kök için `--base <dizin>`.
+
+Ne yapar:
+
+| Bölüm | İş |
+|---|---|
+| **Yol Haritası** | Oluşturmadan incelemeye 9 adımlık sıralı rehber. Panelin izlediği maddeler otomatik ✓; konsollarda elle yapılanlar (ASC kaydı, App Privacy, testçi, Data safety…) işaretlenir ve hatırlanır. ASC/Play'in doldurulacak TÜM alanları içeride |
+| **Yayına hazırlık** | iOS ve Android yolları **ayrı** değerlendirilir — Android'deki eksik iOS yayınını bekletmez. Her platformun kendi "ne kaldı" listesi; maddelerden ilgili yere atlanır |
+| **Denetim** | `forge doctor` sonuçları platforma göre gruplu (iOS / Android / Ortak); `forge fix` deneme ve uygulama |
+| **İkon** | Tek görsel yükle → iOS+Android ikon, adaptive ikon, açılış ekranı üretilir (`forge icon`) |
+| **Geliştirme** | `flutter pub get` / `pub upgrade` |
+| **Build & Yayın** | iOS ve Android **ayrı kartlar**: build (deneme), TestFlight / Play Beta, App Store / Play'e **yükleme** (yayını insan yapar) |
+| **Yapılandırma** | Uygulamanın anahtarlarını (`.env`) tarayıcıdan doldur — App Store Connect, Google Play, AdMob, backend. Her alanda *nereden alınır* linki; `.p8`/JSON dosyaları sürükle-yükle |
+| **Yeni uygulama** | `forge new` formu — ad, kimlik, görünen ad, açıklama, GitHub'da repo aç |
+
+İki tasarım kararı bilinçlidir:
+
+- **Yalnızca localhost.** Panel kabuk komutu çalıştırır; dış ağa açılırsa
+  makineyi başkasının eline verir. Dinleme adresi sabittir, değiştirilemez.
+- **Gerçek yayın iki kapıdan geçer.** Geri alınamaz bir yükleme başlatmadan
+  önce panel onay ister _ve_ sunucu `confirm=YAYINLA` olmadan reddeder.
+  Tarayıcıdaki onay tek başına güvenilmez sayılır.
+
 ## Yol haritası
 
 - [x] `forge doctor` — mağaza hazırlık denetimi
 - [x] `forge fix` — otomatik düzeltmeler
 - [x] `forge new` — mağazaya hazır proje iskeleti
-- [ ] `forge new --backend` — FastAPI + PostgreSQL + Docker katmanı
+- [x] Kontrol paneli — denetim, build ve yayının tarayıcıdan yönetimi
+- [x] `forge new --backend` — FastAPI + PostgreSQL + Docker katmanı
 - [ ] `forge release` — deploy.sh sarmalayıcısı
-- [ ] `forge icon` — tek görselden ikon ve açılış ekranı üretimi
+- [x] `forge icon` — tek görselden ikon ve açılış ekranı üretimi
 - [ ] `forge screenshots` — mağaza ekran görüntülerini simülatörden üretme

@@ -88,6 +88,21 @@ class ProjectScaffold {
     _makeExecutable(p.join(root, '$_app/deploy.sh'));
   }
 
+  /// `forge new --backend` katmanı: `assets/template/backend/` altındaki her
+  /// şey aynen `<root>/backend/` altına gider. Alt ağaç 1:1 eşlendiği için
+  /// (yerleşim belirsizliği yok) fileMap yerine döngüyle kopyalanır.
+  ///
+  /// Tek istisna, app tarafındaki sözleşme testi: `contract_test.dart`
+  /// şablonundan `<app>/test/api_contract_test.dart`'a yazılır ki
+  /// AGENTS.md'deki doğrulama komutu gerçekten çalışsın.
+  void copyBackend() {
+    for (final source in templatePaths) {
+      if (!source.startsWith('backend/')) continue;
+      write(source, render(source)); // backend/… → <root>/backend/…
+    }
+    write('$_app/test/api_contract_test.dart', render('contract_test.dart'));
+  }
+
   void write(String relativeTarget, String content) {
     final file = File(p.join(root, relativeTarget));
     file.parent.createSync(recursive: true);

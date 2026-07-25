@@ -127,7 +127,7 @@ platform :ios do
     )
   end
 
-  desc "App Store'a yükle ve otomatik incelemeye gönder"
+  desc "App Store'a YÜKLE (incelemeye gönderme insanın işidir)"
   lane :release do
     auth
     prepare_signing
@@ -138,9 +138,17 @@ platform :ios do
       next
     end
 
+    # Build App Store Connect'e yüklenir ama İNCELEMEYE GÖNDERİLMEZ
+    # (submit_for_review: false). Bilinçli: mağaza listelemesinin (açıklama,
+    # ekran görüntüsü, gizlilik, yaş sınırı) bu araç tarafından değil elle
+    # doldurulması gerekir; gönder düğmesine basmak, listelemeyi gözden
+    # geçirmiş bir insanın işidir. Yükleme sonrası App Store Connect'te
+    # build'i sürüme ekleyip "İncelemeye Gönder"e kendiniz basarsınız.
+    #
+    # Not: uygulama kaydının App Store Connect'te ZATEN var olması gerekir;
+    # bu lane uygulamayı oluşturmaz, yalnızca build yükler.
     upload_to_app_store(
-      submit_for_review: true,
-      automatic_release: true,
+      submit_for_review: false,
       force: true,
       # Metadata/ekran görüntüsü klasörleri bu pakette yok; yüklemeye
       # kalkarsa deliver hata verir veya mağaza metnini boşaltır.
@@ -148,11 +156,10 @@ platform :ios do
       # fastlane/metadata klasörünü oluşturup skip_metadata: false yapın.
       skip_screenshots: true,
       skip_metadata: true,
-      precheck_include_in_app_purchases: false,
-      submission_information: {
-        add_id_info_uses_idfa: false
-      }
+      precheck_include_in_app_purchases: false
     )
+    UI.success("Build yüklendi. App Store Connect'te sürüme ekleyip " \
+               "'İncelemeye Gönder'e siz basın.")
   end
 
   desc "Sertifikaları OLUŞTUR / YENİLE (tek seferlik veya sertifika bittiğinde)"

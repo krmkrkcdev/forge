@@ -1,0 +1,32 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: {{PROJECT_NAME}}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/{{PROJECT_NAME}}
+      MEDIA_DIR: /srv/media
+    ports:
+      - "8000:8000"
+    volumes:
+      # Yüklenen fotoğraflar kalıcı olsun (konteyner yeniden kurulunca silinmesin).
+      - media:/srv/media
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  media:

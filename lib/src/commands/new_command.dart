@@ -48,6 +48,12 @@ class NewCommand extends Command<int> {
         'pub-add',
         help: 'Bağımlılıkları flutter pub add ile ekler (ağ gerektirir).',
         defaultsTo: true,
+      )
+      ..addFlag(
+        'backend',
+        help: 'FastAPI + PostgreSQL + Docker sunucu katmanını (backend/) '
+            'üretir. Çevrimdışı öncelikli senkron iskeleti.',
+        defaultsTo: false,
       );
   }
 
@@ -173,6 +179,13 @@ class NewCommand extends Command<int> {
     scaffold.copyAll();
     scaffold.append('.gitignore', scaffold.render('gitignore_additions'));
 
+    // İsteğe bağlı sunucu katmanı (backend/ + app tarafı sözleşme testi).
+    final withBackend = argResults!['backend'] as bool;
+    if (withBackend) {
+      stdout.writeln('\n🐍 Backend katmanı (FastAPI + PostgreSQL)');
+      scaffold.copyBackend();
+    }
+
     // flutter create'in ürettiği örnek testler silinen widget'lara bakıyor.
     _remove(p.join(appDir, 'test', 'widget_test.dart'));
 
@@ -239,6 +252,7 @@ class NewCommand extends Command<int> {
       appName: appName,
       packageId: packageId,
       problems: problems,
+      backend: withBackend,
     );
     return problems.isEmpty ? 0 : 1;
   }
@@ -387,6 +401,7 @@ class NewCommand extends Command<int> {
     required String appName,
     required String packageId,
     required List<String> problems,
+    bool backend = false,
   }) {
     final rel = p.relative(root);
 
@@ -420,5 +435,13 @@ class NewCommand extends Command<int> {
     stdout.writeln('  4. Yayın: .env.example → .env, doldurun');
     stdout.writeln('  5. Denetim:  forge doctor --path $rel/app');
     stdout.writeln('  6. Deneme:   ./deploy.sh ios beta --dry-run');
+
+    if (backend) {
+      stdout.writeln('\nBackend (FastAPI + PostgreSQL):');
+      stdout.writeln('  cd $rel/backend && docker compose up --build');
+      stdout.writeln('  → API http://localhost:8000  ·  dokümanlar /docs');
+      stdout.writeln('  Uygulamaya API adresini panelden (Yapılandırma → '
+          'API taban adresi) ya da .env\'e yaz.');
+    }
   }
 }

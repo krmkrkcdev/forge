@@ -20,3 +20,13 @@ key.properties
 *.ipa
 *.aab
 *.dSYM.zip
+
+# ---------------------------------------------------------------- backend
+# FastAPI + PostgreSQL katmanı (forge new --backend). Sunucu sırları ve
+# derleme çıktıları depoya girmez.
+backend/.env
+backend/media/
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
