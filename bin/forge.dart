@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:args/command_runner.dart';
 import 'package:forge/src/commands/doctor_command.dart';
 import 'package:forge/src/commands/fix_command.dart';
+import 'package:forge/src/commands/icon_command.dart';
 import 'package:forge/src/commands/new_command.dart';
 
 Future<void> main(List<String> arguments) async {
@@ -12,7 +13,8 @@ Future<void> main(List<String> arguments) async {
   )
     ..addCommand(NewCommand())
     ..addCommand(DoctorCommand())
-    ..addCommand(FixCommand());
+    ..addCommand(FixCommand())
+    ..addCommand(IconCommand());
 
   try {
     exit(await runner.run(arguments) ?? 0);

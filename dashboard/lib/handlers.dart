@@ -548,7 +548,7 @@ class Handlers {
     return _json({
       'installed': true,
       'authenticated': res.exitCode == 0,
-      if (account != null) 'account': account,
+      'account': ?account,
     });
   }
 

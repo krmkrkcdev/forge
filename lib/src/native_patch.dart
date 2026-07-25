@@ -301,3 +301,53 @@ flutter_native_splash:
     color: "#2F6FED"
     image: assets/icon/icon_foreground.png
 ''';
+
+// ---------------------------------------------------- AdMob uygulama kimliği
+
+/// Info.plist'teki `GADApplicationIdentifier` DEĞERİNİ [appId] ile değiştirir.
+///
+/// `patchInfoPlist`'ten farkı: o anahtar YOKSA ekler ve varsa dokunmaz; bu ise
+/// var olan değeri günceller (test kimliğini gerçeğiyle değiştirmek için).
+/// Anahtar hiç yoksa problem döner — çünkü forge'un ürettiği her projede zaten
+/// vardır; yoksa beklenmedik bir durumdur.
+PatchResult setAdmobAppIdIos(String plist, String appId) {
+  final pattern = RegExp(
+    r'(<key>GADApplicationIdentifier</key>\s*<string>)([^<]*)(</string>)',
+  );
+  if (!pattern.hasMatch(plist)) {
+    return PatchResult(plist,
+        problem: 'Info.plist içinde GADApplicationIdentifier bulunamadı.');
+  }
+  return PatchResult(
+    plist.replaceFirstMapped(pattern, (m) => '${m[1]}$appId${m[3]}'),
+  );
+}
+
+/// AndroidManifest.xml'deki AdMob `APPLICATION_ID` meta-data DEĞERİNİ [appId]
+/// ile değiştirir. name ve value ayrı satırlarda olduğundan aradaki boşluğu
+/// `\s+` ile geçiyoruz.
+PatchResult setAdmobAppIdAndroid(String manifest, String appId) {
+  final pattern = RegExp(
+    r'(android:name="com\.google\.android\.gms\.ads\.APPLICATION_ID"\s+'
+    r'android:value=")([^"]*)(")',
+  );
+  if (!pattern.hasMatch(manifest)) {
+    return PatchResult(manifest,
+        problem: 'AndroidManifest.xml içinde AdMob APPLICATION_ID bulunamadı.');
+  }
+  return PatchResult(
+    manifest.replaceFirstMapped(pattern, (m) => '${m[1]}$appId${m[3]}'),
+  );
+}
+
+/// Info.plist / AndroidManifest içindeki mevcut AdMob uygulama kimliği; yoksa
+/// `null`. Paneldeki alanın "şu an ne yazıyor" değerini göstermek için.
+String? readAdmobAppIdIos(String plist) =>
+    RegExp(r'<key>GADApplicationIdentifier</key>\s*<string>([^<]*)</string>')
+        .firstMatch(plist)
+        ?.group(1);
+
+String? readAdmobAppIdAndroid(String manifest) => RegExp(
+      r'android:name="com\.google\.android\.gms\.ads\.APPLICATION_ID"\s+'
+      r'android:value="([^"]*)"',
+    ).firstMatch(manifest)?.group(1);

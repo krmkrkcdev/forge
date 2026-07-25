@@ -351,4 +351,41 @@ environment:
       expect('flutter_launcher_icons:'.allMatches(twice), hasLength(1));
     });
   });
+
+  group('AdMob uygulama kimliği', () {
+    const plist = '<dict>\n'
+        '\t<key>GADApplicationIdentifier</key>\n'
+        '\t<string>ca-app-pub-3940256099942544~1458002511</string>\n'
+        '</dict>';
+    const manifest = '    <application android:label="x">\n'
+        '        <meta-data\n'
+        '            android:name="com.google.android.gms.ads.APPLICATION_ID"\n'
+        '            android:value="ca-app-pub-3940256099942544~3347511713" />\n'
+        '    </application>';
+
+    test('iOS değerini değiştirir', () {
+      final r = setAdmobAppIdIos(plist, 'ca-app-pub-42~99');
+      expect(r.ok, isTrue);
+      expect(r.content, contains('<string>ca-app-pub-42~99</string>'));
+      expect(r.content, isNot(contains('3940256099942544')));
+    });
+
+    test('Android değerini değiştirir', () {
+      final r = setAdmobAppIdAndroid(manifest, 'ca-app-pub-42~88');
+      expect(r.ok, isTrue);
+      expect(r.content, contains('android:value="ca-app-pub-42~88"'));
+      expect(r.content, isNot(contains('3940256099942544')));
+    });
+
+    test('anahtar yoksa problem bildirir', () {
+      expect(setAdmobAppIdIos('<dict></dict>', 'x').ok, isFalse);
+      expect(setAdmobAppIdAndroid('<application></application>', 'x').ok, isFalse);
+    });
+
+    test('mevcut değeri okur', () {
+      expect(readAdmobAppIdIos(plist), 'ca-app-pub-3940256099942544~1458002511');
+      expect(readAdmobAppIdAndroid(manifest),
+          'ca-app-pub-3940256099942544~3347511713');
+    });
+  });
 }

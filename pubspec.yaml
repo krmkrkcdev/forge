@@ -12,6 +12,7 @@ executables:
 dependencies:
   args: ^2.6.0
   path: ^1.9.0
+  shelf: ^1.4.1
   yaml: ^3.1.2
 
 dev_dependencies:
