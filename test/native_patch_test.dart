@@ -272,6 +272,46 @@ void main() {
     });
   });
 
+  group('patchAndroidApplicationId', () {
+    test('kts sözdiziminde kimliği değiştirir', () {
+      final result = patchAndroidApplicationId(
+        '    applicationId = "com.devposs.yazi_tara"\n',
+        'com.devposs.yaziTara',
+      );
+
+      expect(result.ok, isTrue);
+      expect(result.content,
+          contains('applicationId = "com.devposs.yaziTara"'));
+      expect(result.content, isNot(contains('yazi_tara')));
+    });
+
+    test('groovy sözdiziminde kimliği değiştirir', () {
+      final result = patchAndroidApplicationId(
+        "        applicationId 'com.devposs.yazi_tara'\n",
+        'com.devposs.yaziTara',
+      );
+
+      expect(result.ok, isTrue);
+      expect(result.content, contains('applicationId "com.devposs.yaziTara"'));
+    });
+
+    test('kimlik zaten aynıysa içerik değişmez', () {
+      const gradle = '    applicationId = "com.devposs.yaziTara"\n';
+
+      expect(
+        patchAndroidApplicationId(gradle, 'com.devposs.yaziTara').content,
+        equals(gradle),
+      );
+    });
+
+    test('applicationId yoksa sorun bildirir', () {
+      final result = patchAndroidApplicationId('android {}\n', 'com.x.y');
+
+      expect(result.ok, isFalse);
+      expect(result.content, equals('android {}\n'));
+    });
+  });
+
   group('patchPubspec', () {
     const pubspec = '''
 name: denek

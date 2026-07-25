@@ -125,6 +125,31 @@ class NewCommand extends Command<int> {
     if (created != 0) return created;
 
     final project = FlutterProject(appDir);
+
+    // Alt çizgili proje adlarında flutter create iki mağazaya farklı kimlik
+    // üretir; Android, iOS'un kimliğine eşitlenir (bkz.
+    // patchAndroidApplicationId). packageId bu satırdan SONRA okunmalı ki
+    // şablonlara ortak kimlik gitsin.
+    final iosId = project.iosBundleId;
+    if (iosId != null &&
+        project.androidApplicationId != null &&
+        project.androidApplicationId != iosId) {
+      for (final rel in [
+        'android/app/build.gradle.kts',
+        'android/app/build.gradle',
+      ]) {
+        final file = File(p.join(appDir, rel));
+        if (!file.existsSync()) continue;
+        final patched =
+            patchAndroidApplicationId(file.readAsStringSync(), iosId);
+        if (patched.ok) {
+          file.writeAsStringSync(patched.content);
+          stdout.writeln('  eşitlendi   $rel → applicationId = $iosId');
+        }
+        break;
+      }
+    }
+
     final packageId = project.androidApplicationId ?? '$org.$projectName';
 
     // 2 ------------------------------------------------------- şablon katmanı

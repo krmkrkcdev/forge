@@ -227,6 +227,25 @@ PatchResult patchBuildGradle(
   return PatchResult(content);
 }
 
+/// Android `applicationId`'yi verilen kimliğe eşitler.
+///
+/// `flutter create`, alt çizgili proje adlarında iki mağazaya farklı kimlik
+/// üretir: Android alt çizgiyi korur, Apple bundle ID'de alt çizgiye izin
+/// vermediği için iOS camelCase alır (yazi_tara → yaziTara). Ortak kimlik
+/// olarak iOS'unki seçilir — Android her iki biçimi de kabul eder, Apple
+/// etmez. Hem `.kts` (`applicationId = "..."`) hem Groovy
+/// (`applicationId "..."`) sözdizimini tanır.
+PatchResult patchAndroidApplicationId(String gradle, String id) {
+  final pattern = RegExp(r'''(applicationId\s*=?\s*)["'][^"']+["']''');
+  if (!pattern.hasMatch(gradle)) {
+    return PatchResult(gradle,
+        problem: 'build.gradle içinde applicationId bulunamadı.');
+  }
+  return PatchResult(
+    gradle.replaceFirstMapped(pattern, (m) => '${m.group(1)}"$id"'),
+  );
+}
+
 // -------------------------------------------------------------- pubspec.yaml
 
 /// pubspec.yaml'ı yayına uygun hâle getirir.
