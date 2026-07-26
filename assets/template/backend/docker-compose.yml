@@ -1,31 +1,60 @@
+# Compose PROJE ADI. Verilmezse ad çalışma dizininden ("backend") türetilir
+# ve aynı sunucudaki her "backend/" klasörü AYNI proje sayılır: ikinci yığın
+# ilkinin konteynerlerini "bu projede tanımlı değil" diyerek siler, ortak
+# veritabanını kendi ayarlarıyla yeniden yaratır ve "backend-api" imajının
+# üzerine yazar. Gerçekten başımıza geldi; bu satır onu imkânsız kılar.
+name: {{PROJECT_NAME}}
+
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: {{PROJECT_NAME}}
+      POSTGRES_USER: ${POSTGRES_USER:-{{PROJECT_NAME}}}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD .env dosyasinda tanimli olmali}
+      POSTGRES_DB: ${POSTGRES_DB:-{{PROJECT_NAME}}}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 3s
-      timeout: 3s
-      retries: 10
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-{{PROJECT_NAME}}}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Veritabanı dışarıya AÇILMAZ; yalnızca compose ağı üzerinden erişilir.
 
   api:
     build: .
+    # Ters vekil bu adla bağlanır. Klasör adından türetilen varsayılan
+    # (backend-api-1) hem okunaksızdır hem başka projelerle karışır.
+    container_name: {{PROJECT_NAME}}-api
+    restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/{{PROJECT_NAME}}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-{{PROJECT_NAME}}}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-{{PROJECT_NAME}}}
       MEDIA_DIR: /srv/media
-    ports:
-      - "8000:8000"
     volumes:
       # Yüklenen fotoğraflar kalıcı olsun (konteyner yeniden kurulunca silinmesin).
       - media:/srv/media
+    # YALNIZCA localhost'a bağlanır; dışarıdan erişim ters vekil üzerinden
+    # olur. Bu yayın yerel doğrulama içindir (curl 127.0.0.1:PORT/health).
+    # Aynı sunucudaki her servis AYRI port ister: iki yığın aynı portu
+    # isterse ikincisi "address already in use" ile hiç başlamaz.
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
+    networks:
+      # default: veritabanına erişim. proxy: ters vekilin bu servisi
+      # görebilmesi için. Veritabanı bilinçli olarak proxy ağında DEĞİL.
+      - default
+      - proxy
+
+networks:
+  proxy:
+    # Ters vekil ile ortak ağ. Sunucuda zaten var olduğu için compose
+    # oluşturmaz, mevcut olana bağlanır. Ad, PROXY_NETWORK ile değiştirilir.
+    external: true
+    name: ${PROXY_NETWORK:-proxy-network}
 
 volumes:
   pgdata:

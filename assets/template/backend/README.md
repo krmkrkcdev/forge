@@ -7,15 +7,44 @@ senkron katmanı**dır; ana kaynak telefondaki veritabanıdır.
 
 ```bash
 cd backend
-docker compose up --build
+cp .env.example .env
+
+# Zorunlu sırrı üretin ve .env içine yazın — YALNIZCA BİR KEZ:
+openssl rand -base64 24   # POSTGRES_PASSWORD
+
+docker compose up -d --build
+curl 127.0.0.1:8000/health     # {"status":"ok"}
 ```
 
-- API: http://localhost:8000
-- Sağlık: http://localhost:8000/health
-- Otomatik dokümanlar: http://localhost:8000/docs
-
 `docker compose up` önce Postgres'i hazırlar, göçleri (`alembic upgrade head`)
-uygular ve sunucuyu başlatır.
+uygular ve sunucuyu başlatır. API yalnızca `127.0.0.1` üzerinden dinler;
+dışarıya açılması ters vekil ile yapılır. Otomatik dokümanlar:
+http://127.0.0.1:8000/docs
+
+> `POSTGRES_PASSWORD`'u yığın bir kez ayağa kalktıktan sonra değiştirmeyin.
+> Postgres ilk kurulumdaki parolayı veri dizinine yazar; sonradan değişen
+> değer yok sayılır ve API "password authentication failed" ile restart
+> döngüsüne girer. Gerçekten gerekiyorsa veritabanını sıfırlayın:
+> `docker compose down -v && docker compose up -d --build`
+
+## Sunucuya kurulum
+
+Paneldeki **Sunucuya kur** düğmesi SSH ile bağlanır, `/opt/services/<proje>`
+klasörüne depoyu klonlar (varsa `git pull` ile günceller), `.env` yoksa
+üretir ve `docker compose up -d --build` çalıştırır. Kodu **git'ten** alır —
+commit'lenmemiş ya da push'lanmamış iş varsa hiç başlamaz.
+
+Kurulumdan sonra ters vekilde (Nginx Proxy Manager) bir Proxy Host eklenir:
+
+| Alan | Değer |
+|---|---|
+| Domain Names | `{{PROJECT_NAME}}.ornek.com` |
+| Forward Hostname | `{{PROJECT_NAME}}-api` |
+| Forward Port | `8000` |
+| SSL | Request a new SSL Certificate + Force SSL |
+
+Forward Port konteyner içi porttur (`8000`); `.env` içindeki `API_PORT`
+yalnızca sunucunun kendi içinden test içindir, vekil onu görmez.
 
 ## Uçlar
 

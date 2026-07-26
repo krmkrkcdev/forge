@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:forge/src/checks.dart';
+import 'package:forge/src/compose.dart';
 import 'package:forge/src/environment.dart';
 import 'package:forge/src/native_patch.dart';
 // dart:io'nun Platform sınıfını (Platform.script) gölgelememesi için
@@ -128,8 +129,9 @@ class Handlers {
   String _prettyName(String dir, FlutterProject project) {
     // forge new düzeninde proje app/ altında; kullanıcıya deponun adını
     // göstermek daha anlamlı.
-    final repo =
-        p.basename(dir) == 'app' ? p.basename(p.dirname(dir)) : p.basename(dir);
+    final repo = p.basename(dir) == 'app'
+        ? p.basename(p.dirname(dir))
+        : p.basename(dir);
     return repo;
   }
 
@@ -149,10 +151,8 @@ class Handlers {
       for (final f in runChecks(project)) _findingJson(f, 'proje'),
       for (final f in runEnvironmentChecks()) _findingJson(f, 'ortam'),
     ];
-    final blockers =
-        findings.where((f) => f['severity'] == 'blocker').length;
-    final warnings =
-        findings.where((f) => f['severity'] == 'warning').length;
+    final blockers = findings.where((f) => f['severity'] == 'blocker').length;
+    final warnings = findings.where((f) => f['severity'] == 'warning').length;
 
     return _json({
       'project': project.appName ?? p.basename(project.root),
@@ -169,16 +169,16 @@ class Handlers {
   }
 
   Map<String, dynamic> _findingJson(Finding f, String source) => {
-        'id': f.id,
-        'severity': f.severity.name, // blocker | warning | info
-        'severityLabel': f.severity.label,
-        'platform': f.platform.name, // ios | android | both
-        'title': f.title,
-        'why': f.why,
-        'fix': f.fix,
-        'autoFixable': f.autoFixable,
-        'source': source,
-      };
+    'id': f.id,
+    'severity': f.severity.name, // blocker | warning | info
+    'severityLabel': f.severity.label,
+    'platform': f.platform.name, // ios | android | both
+    'title': f.title,
+    'why': f.why,
+    'fix': f.fix,
+    'autoFixable': f.autoFixable,
+    'source': source,
+  };
 
   // ---------------------------------------------------- yayına hazırlık
 
@@ -255,8 +255,9 @@ class Handlers {
     final android = <Map<String, dynamic>>[];
     if (project.hasAndroid) {
       android.add(doctorGate('android'));
-      final signingOk =
-          File(p.join(path, 'android', 'key.properties')).existsSync();
+      final signingOk = File(
+        p.join(path, 'android', 'key.properties'),
+      ).existsSync();
       android.add({
         'label': 'Sürüm imzalama (key.properties)',
         'status': signingOk ? 'ok' : 'todo',
@@ -282,7 +283,8 @@ class Handlers {
           'hint': appReal ? 'gerçek' : 'test kimliği — gelir yok',
           'jump': 'config',
         });
-        final unitsOk = realUnit('ADMOB_BANNER_ANDROID') &&
+        final unitsOk =
+            realUnit('ADMOB_BANNER_ANDROID') &&
             realUnit('ADMOB_INTERSTITIAL_ANDROID');
         android.add({
           'label': 'Reklam birim kimlikleri',
@@ -425,10 +427,18 @@ class Handlers {
       return _sseError('Önce bir görsel yükleyin.');
     }
     return _run([
-      _Step('dart', ['run', 'flutter_launcher_icons'], path,
-          label: 'Uygulama ikonu'),
-      _Step('dart', ['run', 'flutter_native_splash:create'], path,
-          label: 'Açılış ekranı'),
+      _Step(
+        'dart',
+        ['run', 'flutter_launcher_icons'],
+        path,
+        label: 'Uygulama ikonu',
+      ),
+      _Step(
+        'dart',
+        ['run', 'flutter_native_splash:create'],
+        path,
+        label: 'Açılış ekranı',
+      ),
     ]);
   }
 
@@ -447,8 +457,10 @@ class Handlers {
       return _sseError('pubspec.yaml bulunamadı: $path');
     }
     final upgrade = q['upgrade'] == '1';
-    return _spawn('flutter', ['pub', upgrade ? 'upgrade' : 'get'],
-        workingDir: path);
+    return _spawn('flutter', [
+      'pub',
+      upgrade ? 'upgrade' : 'get',
+    ], workingDir: path);
   }
 
   // --------------------------------------------------------------- new
@@ -478,8 +490,10 @@ class Handlers {
           '--org',
           org,
           if (appName != null && appName.isNotEmpty) ...['--app-name', appName],
-          if (description != null && description.isNotEmpty)
-            ...['--description', description],
+          if (description != null && description.isNotEmpty) ...[
+            '--description',
+            description,
+          ],
           if (backend) '--backend',
         ],
         // Proje, seçilen üst dizinin içine kurulur.
@@ -500,8 +514,10 @@ class Handlers {
           'olmadan oluşturmak için formdaki kutunun işaretini kaldırın.',
         );
       }
-      if (Process.runSync('gh', ['auth', 'status'], environment: _localeFix)
-              .exitCode !=
+      if (Process.runSync('gh', [
+            'auth',
+            'status',
+          ], environment: _localeFix).exitCode !=
           0) {
         return _sseError(
           'gh kurulu ama GitHub girişi yapılmamış. Kenar çubuğundaki '
@@ -510,24 +526,28 @@ class Handlers {
         );
       }
       final projectDir = p.join(parent, name);
-      steps.add(_Step(
-        'gh',
-        [
-          'repo',
-          'create',
-          name,
-          visibility,
-          '--source',
-          projectDir,
-          '--remote',
-          'origin',
-          '--push',
-          if (description != null && description.isNotEmpty)
-            ...['--description', description],
-        ],
-        parent,
-        label: 'gh repo create (GitHub\'a bağla ve gönder)',
-      ));
+      steps.add(
+        _Step(
+          'gh',
+          [
+            'repo',
+            'create',
+            name,
+            visibility,
+            '--source',
+            projectDir,
+            '--remote',
+            'origin',
+            '--push',
+            if (description != null && description.isNotEmpty) ...[
+              '--description',
+              description,
+            ],
+          ],
+          parent,
+          label: 'gh repo create (GitHub\'a bağla ve gönder)',
+        ),
+      );
     }
 
     return _run(steps);
@@ -542,8 +562,10 @@ class Handlers {
     if (!_hasExecutable('gh')) {
       return _json({'installed': false, 'authenticated': false});
     }
-    final res =
-        Process.runSync('gh', ['auth', 'status'], environment: _localeFix);
+    final res = Process.runSync('gh', [
+      'auth',
+      'status',
+    ], environment: _localeFix);
     // gh sürümüne göre çıktı stdout'a da stderr'e de gidebiliyor.
     final out = '${res.stdout}\n${res.stderr}';
     final account = RegExp(r'account (\S+)').firstMatch(out)?.group(1);
@@ -560,17 +582,18 @@ class Handlers {
   Response _githubLogin() {
     if (!_hasExecutable('gh')) {
       return _sseError(
-          'gh (GitHub CLI) kurulu değil. Terminalde: brew install gh');
+        'gh (GitHub CLI) kurulu değil. Terminalde: brew install gh',
+      );
     }
-    return _spawn(
-      'gh',
-      [
-        'auth', 'login', '--web',
-        '--hostname', 'github.com',
-        '--git-protocol', 'https',
-      ],
-      workingDir: forgeRoot,
-    );
+    return _spawn('gh', [
+      'auth',
+      'login',
+      '--web',
+      '--hostname',
+      'github.com',
+      '--git-protocol',
+      'https',
+    ], workingDir: forgeRoot);
   }
 
   /// Çocuk süreçlere eklenecek yerel düzeltmesi. Sunucunun ortamında UTF-8
@@ -691,29 +714,58 @@ class Handlers {
     {
       'id': 'admob',
       'title': 'Reklam — AdMob birim kimlikleri',
-      'note': 'BOŞ bırakılırsa kod TEST reklamı gösterir (gelir sıfır). '
+      'note':
+          'BOŞ bırakılırsa kod TEST reklamı gösterir (gelir sıfır). '
           'Gerçek kimlikle geliştirip kendi reklamına tıklamak hesabı kapatır.',
       'help': 'https://admob.google.com',
       'helpLabel': 'admob.google.com › Uygulamalar › Reklam birimleri',
       'fields': [
-        {'key': 'ADMOB_BANNER_IOS', 'label': 'Banner — iOS', 'placeholder': 'ca-app-pub-…/…'},
-        {'key': 'ADMOB_INTERSTITIAL_IOS', 'label': 'Geçiş reklamı — iOS', 'placeholder': 'ca-app-pub-…/…'},
-        {'key': 'ADMOB_BANNER_ANDROID', 'label': 'Banner — Android', 'placeholder': 'ca-app-pub-…/…'},
-        {'key': 'ADMOB_INTERSTITIAL_ANDROID', 'label': 'Geçiş reklamı — Android', 'placeholder': 'ca-app-pub-…/…'},
+        {
+          'key': 'ADMOB_BANNER_IOS',
+          'label': 'Banner — iOS',
+          'placeholder': 'ca-app-pub-…/…',
+        },
+        {
+          'key': 'ADMOB_INTERSTITIAL_IOS',
+          'label': 'Geçiş reklamı — iOS',
+          'placeholder': 'ca-app-pub-…/…',
+        },
+        {
+          'key': 'ADMOB_BANNER_ANDROID',
+          'label': 'Banner — Android',
+          'placeholder': 'ca-app-pub-…/…',
+        },
+        {
+          'key': 'ADMOB_INTERSTITIAL_ANDROID',
+          'label': 'Geçiş reklamı — Android',
+          'placeholder': 'ca-app-pub-…/…',
+        },
       ],
     },
     {
       'id': 'admob_app',
       'title': 'Reklam — Uygulama kimliği',
-      'note': 'ca-app-pub-…~… biçimindeki UYGULAMA kimliği (reklam BİRİMİ '
+      'note':
+          'ca-app-pub-…~… biçimindeki UYGULAMA kimliği (reklam BİRİMİ '
           'kimliğinden farklı, ~ işaretli). .env\'e değil doğrudan '
           'Info.plist ve AndroidManifest.xml\'e yazılır. TEST kimliğiyle '
           'yayınlanan uygulama çalışır ama HİÇ gelir getirmez.',
       'help': 'https://admob.google.com',
-      'helpLabel': 'admob.google.com › Uygulamalar (uygulama kimliği ~ işaretli)',
+      'helpLabel':
+          'admob.google.com › Uygulamalar (uygulama kimliği ~ işaretli)',
       'fields': [
-        {'key': 'ADMOB_APP_ID_IOS', 'label': 'iOS uygulama kimliği', 'native': 'ios', 'placeholder': 'ca-app-pub-…~…'},
-        {'key': 'ADMOB_APP_ID_ANDROID', 'label': 'Android uygulama kimliği', 'native': 'android', 'placeholder': 'ca-app-pub-…~…'},
+        {
+          'key': 'ADMOB_APP_ID_IOS',
+          'label': 'iOS uygulama kimliği',
+          'native': 'ios',
+          'placeholder': 'ca-app-pub-…~…',
+        },
+        {
+          'key': 'ADMOB_APP_ID_ANDROID',
+          'label': 'Android uygulama kimliği',
+          'native': 'android',
+          'placeholder': 'ca-app-pub-…~…',
+        },
       ],
     },
     {
@@ -721,13 +773,18 @@ class Handlers {
       'title': 'Backend',
       'note': 'Uygulamanın konuştuğu API adresi (varsa).',
       'fields': [
-        {'key': 'API_BASE_URL', 'label': 'API taban adresi', 'placeholder': 'https://api.sirketiniz.com'},
+        {
+          'key': 'API_BASE_URL',
+          'label': 'API taban adresi',
+          'placeholder': 'https://api.sirketiniz.com',
+        },
       ],
     },
     {
       'id': 'server',
       'title': 'Sunucu (site / backend yayını)',
-      'note': 'Panelin "Sunucuya kur" adımı bu bilgileri kullanır: SSH ile '
+      'note':
+          'Panelin "Sunucuya kur" adımı bu bilgileri kullanır: SSH ile '
           'bağlanır, klasörü açar, depoyu çeker ve docker compose ile ayağa '
           'kaldırır. ANAHTAR tabanlı SSH gerekir — panel şifre soramaz '
           '(ssh-copy-id ile bir kez kurun).',
@@ -755,12 +812,17 @@ class Handlers {
     {
       'id': 'signing_ios',
       'title': 'iOS imzalama — fastlane match (ileri düzey)',
-      'note': 'Sertifikaları makineler arası paylaşmak için. Boş bırakılırsa '
+      'note':
+          'Sertifikaları makineler arası paylaşmak için. Boş bırakılırsa '
           'Xcode otomatik imzalaması kullanılır (yalnızca bu Mac\'te).',
       'help': 'https://docs.fastlane.tools/actions/match/',
       'helpLabel': 'fastlane match dokümanı',
       'fields': [
-        {'key': 'MATCH_GIT_URL', 'label': 'Sertifika deposu (private git)', 'placeholder': 'git@github.com:kullanici/certs.git'},
+        {
+          'key': 'MATCH_GIT_URL',
+          'label': 'Sertifika deposu (private git)',
+          'placeholder': 'git@github.com:kullanici/certs.git',
+        },
         {'key': 'MATCH_PASSWORD', 'label': 'Sertifika şifresi', 'secret': true},
       ],
     },
@@ -780,8 +842,9 @@ class Handlers {
 
     if (request.method == 'POST') {
       final body = await request.readAsString();
-      final Map<String, dynamic> data =
-          body.isEmpty ? {} : jsonDecode(body) as Map<String, dynamic>;
+      final Map<String, dynamic> data = body.isEmpty
+          ? {}
+          : jsonDecode(body) as Map<String, dynamic>;
       final incoming = (data['values'] as Map?)?.cast<String, dynamic>() ?? {};
       // Yalnızca şemadaki anahtarları kabul et — .env'e keyfi satır girmesin.
       final allowed = _allKeys();
@@ -790,7 +853,10 @@ class Handlers {
       for (final entry in incoming.entries) {
         if (!allowed.contains(entry.key)) continue;
         // Satır sonu enjeksiyonunu kes.
-        final val = entry.value.toString().replaceAll(RegExp(r'[\r\n]'), ' ').trim();
+        final val = entry.value
+            .toString()
+            .replaceAll(RegExp(r'[\r\n]'), ' ')
+            .trim();
         if (_fieldSpec(entry.key)?['native'] != null) {
           nativeUpdates[entry.key] = val;
         } else {
@@ -863,7 +929,11 @@ class Handlers {
       // Bütün alanları elenen grubu (ör. reklam yoksa app id) hiç gösterme.
       if (fields.isNotEmpty) groups.add({...g, 'fields': fields});
     }
-    return _json({'root': path, 'envExists': File(envPath).existsSync(), 'groups': groups});
+    return _json({
+      'root': path,
+      'envExists': File(envPath).existsSync(),
+      'groups': groups,
+    });
   }
 
   /// Yüklenen anahtar dosyasını (.p8 / .json) projedeki hedef klasöre yazar ve
@@ -892,7 +962,12 @@ class Handlers {
     File(p.join(absDir.path, safeName)).writeAsBytesSync(bytes);
     // .env'deki yolu ayarla.
     _writeEnv(p.join(path, '.env'), {field: relPath});
-    return _json({'ok': true, 'field': field, 'path': relPath, 'fileName': safeName});
+    return _json({
+      'ok': true,
+      'field': field,
+      'path': relPath,
+      'fileName': safeName,
+    });
   }
 
   /// Native dosyadaki (Info.plist / AndroidManifest) mevcut AdMob uygulama
@@ -935,10 +1010,10 @@ class Handlers {
   }
 
   Set<String> _allKeys() => {
-        for (final g in _configGroups)
-          for (final f in (g['fields'] as List).cast<Map<String, dynamic>>())
-            f['key'] as String,
-      };
+    for (final g in _configGroups)
+      for (final f in (g['fields'] as List).cast<Map<String, dynamic>>())
+        f['key'] as String,
+  };
 
   Map<String, dynamic>? _fieldSpec(String key) {
     for (final g in _configGroups) {
@@ -983,7 +1058,8 @@ class Handlers {
 
     String format(String key, String value) {
       // Boşluk, # veya tırnak içeren değeri çift tırnakla sar.
-      final needsQuote = value.contains(' ') ||
+      final needsQuote =
+          value.contains(' ') ||
           value.contains('#') ||
           value.contains('"') ||
           value.contains("'");
@@ -1025,7 +1101,8 @@ class Handlers {
   /// makineye özel). Aynı Apple/Play hesabını kullanan tüm uygulamalar buradan
   /// beslenir.
   String get _accountDir {
-    final home = Platform.environment['HOME'] ??
+    final home =
+        Platform.environment['HOME'] ??
         Platform.environment['USERPROFILE'] ??
         Directory.current.path;
     return p.join(home, '.forge');
@@ -1054,22 +1131,26 @@ class Handlers {
         current[e.key] = e.value;
       }
     }
-    File(_accountJson)
-        .writeAsStringSync(const JsonEncoder.withIndent('  ').convert(current));
+    File(
+      _accountJson,
+    ).writeAsStringSync(const JsonEncoder.withIndent('  ').convert(current));
   }
 
   /// GET: yalnızca hesap düzeyi alanları döndürür. POST: onları ~/.forge'a yazar.
   Future<Response> _account(Request request) async {
     if (request.method == 'POST') {
       final body = await request.readAsString();
-      final Map<String, dynamic> data =
-          body.isEmpty ? {} : jsonDecode(body) as Map<String, dynamic>;
+      final Map<String, dynamic> data = body.isEmpty
+          ? {}
+          : jsonDecode(body) as Map<String, dynamic>;
       final incoming = (data['values'] as Map?)?.cast<String, dynamic>() ?? {};
       final updates = <String, String>{};
       for (final e in incoming.entries) {
         if (!_accountKeys.contains(e.key)) continue;
-        updates[e.key] =
-            e.value.toString().replaceAll(RegExp(r'[\r\n]'), ' ').trim();
+        updates[e.key] = e.value
+            .toString()
+            .replaceAll(RegExp(r'[\r\n]'), ' ')
+            .trim();
       }
       _writeAccount(updates);
       return _json({'ok': true, 'saved': updates.keys.toList()});
@@ -1226,13 +1307,48 @@ class Handlers {
       );
     }
 
+    final composeFile = File(
+      p.join(repoRoot, composeDir, 'docker-compose.yml'),
+    );
+    final composeText = composeFile.readAsStringSync();
+
+    // --- compose proje adı sabit mi?
+    //
+    // Verilmezse ad çalışma dizininden türetilir ve aynı sunucudaki her
+    // "backend/" klasörü AYNI proje sayılır: ikinci yığın ilkinin
+    // konteynerlerini siler, veritabanını devralır ve "<dizin>-api" imajının
+    // üzerine yazar. Gerçekten başımıza geldi (jumptoup kurulunca Vaktinde
+    // çevrimdışı kaldı), bu yüzden kurulum burada durur.
+    final projectName = composeProjectName(composeText);
+    if (projectName == null) {
+      return _sseError(
+        '$composeDir/docker-compose.yml proje adı tanımlamıyor.\n\n'
+        'Ad verilmezse Docker onu klasör adından ("$composeDir") türetir ve '
+        'aynı sunucudaki başka bir yığın da aynı adı kullanıyorsa onun '
+        'konteynerlerini siler, veritabanını devralır. Dosyanın en üstüne '
+        'ekleyin:\n\n'
+        '  name: ${p.basename(repoRoot)}',
+      );
+    }
+
     final name = p.basename(repoRoot);
     final target = p.posix.join(base, name);
     final cloneUrl = _sunucuGitAdresi(remoteUrl);
 
     // Uzak kabukta çalışacak betik. Değerler tek tırnakla kaçırılır:
     // kullanıcının girdiği yol/ad uzak kabukta komuta dönüşemez.
-    final script = '''
+    //
+    // Betik dört emniyet adımı içerir; hepsi sunucuda gerçekten yaşanmış
+    // hatalardan doğdu:
+    //   1. Proje adı sunucuda BAŞKA bir compose dosyasına bağlıysa dur —
+    //      devralmak, o yığının konteynerlerini silmek demek.
+    //   2. Port başka bir servis tarafından dinleniyorsa dur.
+    //   3. .env yoksa üret, VARSA dokunma — parolayı yeniden üretmek
+    //      veritabanını kilitler.
+    //   4. Kurulumdan sonra durumu doğrula: "başladı" ile "çalışıyor" aynı
+    //      şey değil; restart döngüsü sessizce başarılı görünüyordu.
+    final script =
+        '''
 set -e
 echo "→ hedef: ${_shq(target)}"
 mkdir -p ${_shq(base)}
@@ -1249,24 +1365,73 @@ else
 fi
 echo "→ sürüm: \$(git rev-parse --short HEAD) (\$(git log -1 --pretty=%s))"
 cd ${_shq(composeDir)}
+
+# 1) proje adı başka bir yığına mı ait?
+# "docker compose ls -a" son sütunda projenin config dosyalarını verir.
+mevcut=\$(docker compose ls -a 2>/dev/null \\
+  | awk -v ad=${_shq(projectName)} '\$1 == ad { print \$NF }' | head -1)
+beklenen=${_shq('$target/$composeDir/docker-compose.yml')}
+if [ -n "\$mevcut" ] && [ "\$mevcut" != "\$beklenen" ]; then
+  echo "✋ DURDU: ${_shq(projectName)} adlı compose projesi bu sunucuda"
+  echo "   BAŞKA bir dosyaya bağlı:"
+  echo "     \$mevcut"
+  echo "   beklenen:"
+  echo "     \$beklenen"
+  echo "   Devam etmek o yığının konteynerlerini silerdi. compose dosyasındaki"
+  echo "   name: alanını benzersiz yapın ya da eski yığını önce kaldırın."
+  exit 1
+fi
+
+# 2) .env yoksa üret, varsa dokunma
+if [ ! -f .env ] && [ -f .env.example ]; then
+  echo "→ .env yok, .env.example'dan üretiliyor (parola bir kez atanır)"
+  cp .env.example .env
+  if grep -q '^POSTGRES_PASSWORD=\$' .env; then
+    sifre=\$(openssl rand -base64 24 | tr -d '\\n/')
+    sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=\$sifre|" .env
+  fi
+elif [ -f .env ]; then
+  echo "→ .env yerinde, dokunulmuyor"
+fi
+
+# 3) port başkası tarafından dinleniyor mu?
+port=\$(grep -E '^API_PORT=' .env 2>/dev/null | cut -d= -f2 | tr -d ' ' || true)
+port=\${port:-8000}
+if command -v ss >/dev/null 2>&1; then
+  kendi=\$(docker compose ps -q 2>/dev/null | wc -l)
+  if [ "\$kendi" = "0" ] && ss -ltn "sport = :\$port" 2>/dev/null | grep -q LISTEN; then
+    echo "✋ DURDU: \$port portu başka bir servis tarafından dinleniyor."
+    echo "   .env içindeki API_PORT değerini boş bir portla değiştirin."
+    exit 1
+  fi
+fi
+
 echo "→ docker compose up -d --build  (${_shq(composeDir)})"
 docker compose up -d --build
+
+# 4) gerçekten çalışıyor mu? (başladı ≠ çalışıyor)
+echo "→ durum bekleniyor (20 sn)…"
+sleep 20
 echo "→ durum:"
 docker compose ps
+if docker compose ps --format '{{.Name}} {{.State}}' 2>/dev/null | grep -qi restart; then
+  echo ""
+  echo "✋ UYARI: bir konteyner restart döngüsünde. Son loglar:"
+  docker compose logs --tail 25
+  exit 1
+fi
+echo "✅ kurulum tamam — konteynerler ayakta"
+echo "   yerel doğrulama:  curl 127.0.0.1:\$port/health"
 ''';
 
-    return _spawn(
-      'ssh',
-      [
-        // BatchMode: anahtar yoksa şifre beklemek yerine hemen ve anlaşılır
-        // biçimde başarısız olur — panel etkileşimli soru soramaz.
-        '-o', 'BatchMode=yes',
-        '-o', 'StrictHostKeyChecking=accept-new',
-        '$user@$host',
-        script,
-      ],
-      workingDir: repoRoot,
-    );
+    return _spawn('ssh', [
+      // BatchMode: anahtar yoksa şifre beklemek yerine hemen ve anlaşılır
+      // biçimde başarısız olur — panel etkileşimli soru soramaz.
+      '-o', 'BatchMode=yes',
+      '-o', 'StrictHostKeyChecking=accept-new',
+      '$user@$host',
+      script,
+    ], workingDir: repoRoot);
   }
 
   /// Git komutunu çalıştırır ve çıktısını döndürür; komut başarısızsa `null`.
@@ -1347,8 +1512,11 @@ docker compose ps
   // ----------------------------------------------------- süreç akıtma
 
   /// Tek bir süreci başlatır — çok adımlı [_run] için ince sarmalayıcı.
-  Response _spawn(String executable, List<String> args,
-      {required String workingDir}) {
+  Response _spawn(
+    String executable,
+    List<String> args, {
+    required String workingDir,
+  }) {
     return _run([_Step(executable, args, workingDir)]);
   }
 
@@ -1361,7 +1529,9 @@ docker compose ps
   /// böyle imkânsız olur. Aynı anda yalnızca bir değiştiren iş çalışabilir.
   Response _run(List<_Step> steps) {
     if (_busy) {
-      return _sseError('Şu anda başka bir işlem çalışıyor. Bitmesini bekleyin.');
+      return _sseError(
+        'Şu anda başka bir işlem çalışıyor. Bitmesini bekleyin.',
+      );
     }
     _busy = true;
 
@@ -1369,8 +1539,12 @@ docker compose ps
 
     void send(String event, Object data) {
       if (controller.isClosed) return;
-      controller.add(utf8.encode('event: $event\n'
-          'data: ${jsonEncode(data)}\n\n'));
+      controller.add(
+        utf8.encode(
+          'event: $event\n'
+          'data: ${jsonEncode(data)}\n\n',
+        ),
+      );
     }
 
     Future<int> runStep(_Step step) async {
@@ -1421,8 +1595,9 @@ docker compose ps
             // Adım başlığını konsola göze çarpan bir satır olarak yaz.
             send('line', {'text': ''});
             send('line', {
-              'text': '── adım ${i + 1}/${steps.length}'
-                  '${step.label != null ? ': ${step.label}' : ''} ──'
+              'text':
+                  '── adım ${i + 1}/${steps.length}'
+                  '${step.label != null ? ': ${step.label}' : ''} ──',
             });
             send('line', {'text': '\$ $cmd'});
           }
@@ -1430,7 +1605,7 @@ docker compose ps
           if (code != 0) {
             if (multi && i < steps.length - 1) {
               send('line', {
-                'text': '❌ Adım başarısız (kod $code) — zincir durduruldu.'
+                'text': '❌ Adım başarısız (kod $code) — zincir durduruldu.',
               });
             }
             break;
@@ -1464,12 +1639,16 @@ docker compose ps
   }
 
   Response _sseError(String message) {
-    final body = 'event: line\ndata: ${jsonEncode({'text': '❌ $message'})}\n\n'
+    final body =
+        'event: line\ndata: ${jsonEncode({'text': '❌ $message'})}\n\n'
         'event: done\ndata: ${jsonEncode({'code': -1, 'ok': false})}\n\n';
-    return Response.ok(body, headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-    });
+    return Response.ok(
+      body,
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+      },
+    );
   }
 
   // ----------------------------------------------------- statik dosyalar
@@ -1478,18 +1657,23 @@ docker compose ps
     final rel = path.isEmpty ? 'index.html' : path;
     final file = File(p.join(_webDir, rel));
     // Dizin dışına çıkma denemelerini engelle.
-    if (!p.isWithin(_webDir, file.path) && p.normalize(file.path) != p.join(_webDir, 'index.html')) {
-      if (!p.equals(file.parent.path, _webDir) && !p.isWithin(_webDir, file.path)) {
+    if (!p.isWithin(_webDir, file.path) &&
+        p.normalize(file.path) != p.join(_webDir, 'index.html')) {
+      if (!p.equals(file.parent.path, _webDir) &&
+          !p.isWithin(_webDir, file.path)) {
         return Response.notFound('yok');
       }
     }
     if (!file.existsSync()) return Response.notFound('yok');
-    return Response.ok(file.readAsBytesSync(), headers: {
-      'Content-Type': _contentType(rel),
-      // Panel yerel bir geliştirme aracı: tarayıcının bayat JS/CSS
-      // önbelleği "eski kod çalışıyor" karışıklığına yol açıyor.
-      'Cache-Control': 'no-store',
-    });
+    return Response.ok(
+      file.readAsBytesSync(),
+      headers: {
+        'Content-Type': _contentType(rel),
+        // Panel yerel bir geliştirme aracı: tarayıcının bayat JS/CSS
+        // önbelleği "eski kod çalışıyor" karışıklığına yol açıyor.
+        'Cache-Control': 'no-store',
+      },
+    );
   }
 
   String _contentType(String path) {
@@ -1502,10 +1686,10 @@ docker compose ps
   }
 
   Response _json(Object data, {int status = 200}) => Response(
-        status,
-        body: jsonEncode(data),
-        headers: {'Content-Type': 'application/json; charset=utf-8'},
-      );
+    status,
+    body: jsonEncode(data),
+    headers: {'Content-Type': 'application/json; charset=utf-8'},
+  );
 }
 
 /// [_run] için tek bir komut adımı. Argümanlar dizidir; kabuk araya girmez.

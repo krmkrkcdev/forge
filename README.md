@@ -182,8 +182,25 @@ Panelde "Yeni uygulama" formundaki **Backend ekle** kutusu da aynı şeyi yapar.
 
 ```bash
 forge new not_defteri --org com.sirket --backend
-cd not_defteri/backend && docker compose up --build   # API :8000, /docs
+cd not_defteri/backend
+cp .env.example .env && openssl rand -base64 24   # POSTGRES_PASSWORD, bir kez
+docker compose up -d --build                      # API 127.0.0.1:8000, /docs
 ```
+
+Üretilen `docker-compose.yml` aynı sunucuda birden çok servis barındırmaya
+göre kuruludur; dördü de gerçek olaylardan doğmuş kararlardır:
+
+- `name: <proje>` — ad verilmezse Docker onu klasör adından türetir ve
+  compose'unu `backend/` altında tutan iki proje aynı ada düşer: ikincisi
+  ilkinin konteynerlerini siler, veritabanını devralır, imajını ezer.
+- `container_name: <proje>-api` — ters vekil servise bu adla bağlanır.
+- `127.0.0.1:${API_PORT:-8000}:8000` — API dışarıya değil yalnızca localhost'a
+  bağlanır; her servise `.env` içinden ayrı port verilir.
+- `proxy` ağı `external` — ters vekil ile ortak ağ, adı `PROXY_NETWORK`.
+
+`POSTGRES_PASSWORD` yığın bir kez ayağa kalktıktan sonra değiştirilmez:
+Postgres ilk kurulumdaki parolayı saklar, sonradan değişeni yok sayar ve API
+"password authentication failed" ile restart döngüsüne girer.
 
 Felsefe `AGENTS.md`'deki ile aynı — **çevrimdışı öncelikli**: telefondaki
 veritabanı ana kaynak, sunucu bir yedek ve senkron katmanı. Bu yüzden uçlar
