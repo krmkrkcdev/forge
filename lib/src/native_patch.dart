@@ -351,3 +351,37 @@ String? readAdmobAppIdAndroid(String manifest) => RegExp(
       r'android:name="com\.google\.android\.gms\.ads\.APPLICATION_ID"\s+'
       r'android:value="([^"]*)"',
     ).firstMatch(manifest)?.group(1);
+
+/// Xcode projesine imzalama takımını yazar.
+///
+/// `flutter create` bu alanı boş bırakır; takım seçilmeden provisioning
+/// profile üretilemez ve arşiv alınamaz. Değer makinede bir kez girilen
+/// hesap varsayılanından (`~/.forge/account.json`) gelir — her yeni
+/// projede aynı engelle karşılaşmanın anlamı yok.
+///
+/// Yalnızca Runner hedefinin yapılandırmalarına yazar. Ayırt etmenin yolu
+/// `INFOPLIST_FILE = Runner/Info.plist`: RunnerTests hedefinde bu satır
+/// yoktur, dolayısıyla test hedefine yanlışlıkla takım yazılmaz.
+PatchResult setDevelopmentTeam(String pbxproj, String teamId) {
+  if (teamId.isEmpty) return PatchResult(pbxproj);
+  if (pbxproj.contains('DEVELOPMENT_TEAM')) {
+    // Zaten bir takım yazılı: farklı olsa bile dokunulmaz. Bu alan
+    // kullanıcının kararı; üzerine yazmak sessizce imzalamayı bozardı.
+    return PatchResult(pbxproj);
+  }
+
+  const marker = 'INFOPLIST_FILE = Runner/Info.plist;';
+  if (!pbxproj.contains(marker)) {
+    return PatchResult(
+      pbxproj,
+      problem: 'project.pbxproj içinde Runner hedefi bulunamadı; '
+          'imzalama takımını Xcode\'dan seçin.',
+    );
+  }
+
+  final content = pbxproj.replaceAll(
+    marker,
+    'DEVELOPMENT_TEAM = $teamId;\n\t\t\t\t$marker',
+  );
+  return PatchResult(content);
+}

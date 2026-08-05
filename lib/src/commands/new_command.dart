@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
 
+import '../account.dart';
 import '../native_patch.dart';
 import '../project.dart';
 import '../scaffold.dart';
@@ -205,6 +206,25 @@ class NewCommand extends Command<int> {
       label: 'ios/Runner.xcodeproj (PrivacyInfo kaydı)',
       problems: problems,
     );
+
+    // İmzalama takımı makine başına bir kez girilir; her yeni projede
+    // aynı engelle karşılaşmanın anlamı yok.
+    final teamId = ForgeAccount.read().appleTeamId;
+    if (teamId != null) {
+      _patchFile(
+        p.join(appDir, 'ios/Runner.xcodeproj/project.pbxproj'),
+        (content) => setDevelopmentTeam(content, teamId),
+        label: 'ios/Runner.xcodeproj (imzalama takımı $teamId)',
+        problems: problems,
+      );
+    } else {
+      // Sessizce geçmek yanlış olur: kullanıcı engeli sonradan
+      // `forge doctor` çıktısında görüp sebebini aramasın.
+      stdout.writeln(
+        '  atlandı     imzalama takımı — ${ForgeAccount.file} içinde '
+        'APPLE_TEAM_ID yok',
+      );
+    }
     _patchFile(
       p.join(appDir, 'android/app/src/main/AndroidManifest.xml'),
       (content) => patchAndroidManifest(

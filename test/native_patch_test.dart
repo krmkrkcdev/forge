@@ -93,6 +93,7 @@ flutter {
 ''';
 
 void main() {
+  _developmentTeamTests();
   group('patchInfoPlist', () {
     test('anahtarları son </dict> önüne ekler', () {
       final result = patchInfoPlist(_infoPlist, '\t<key>GADApplicationIdentifier</key>\n\t<string>x</string>\n');
@@ -386,6 +387,86 @@ environment:
       expect(readAdmobAppIdIos(plist), 'ca-app-pub-3940256099942544~1458002511');
       expect(readAdmobAppIdAndroid(manifest),
           'ca-app-pub-3940256099942544~3347511713');
+    });
+  });
+}
+
+/// Gerçek `flutter create` çıktısında Runner hedefinin üç yapılandırması
+/// (Debug/Profile/Release) ve ayrı bir RunnerTests hedefi bulunur.
+const _pbxprojWithTargets = '''
+/* Begin XCBuildConfiguration section */
+		249021D3217E4FDB00AE95B9 /* Profile */ = {
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = "\$(FLUTTER_BUILD_NUMBER)";
+				INFOPLIST_FILE = Runner/Info.plist;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ornek.uygulama;
+			};
+		};
+		331C80DB294CC9B700263BE5 /* Debug */ = {
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ornek.uygulama.RunnerTests;
+			};
+		};
+		97C147031CF9000F007C117D /* Debug */ = {
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = "\$(FLUTTER_BUILD_NUMBER)";
+				INFOPLIST_FILE = Runner/Info.plist;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ornek.uygulama;
+			};
+		};
+		97C147041CF9000F007C117D /* Release */ = {
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = "\$(FLUTTER_BUILD_NUMBER)";
+				INFOPLIST_FILE = Runner/Info.plist;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ornek.uygulama;
+			};
+		};
+/* End XCBuildConfiguration section */
+''';
+
+void _developmentTeamTests() {
+  group('setDevelopmentTeam', () {
+    test('Runner hedefinin her yapılandırmasına takımı yazar', () {
+      final result = setDevelopmentTeam(_pbxprojWithTargets, '26BTDFQ8VY');
+      expect(result.ok, isTrue);
+      expect(
+        'DEVELOPMENT_TEAM = 26BTDFQ8VY;'.allMatches(result.content).length,
+        3,
+        reason: 'Debug, Profile ve Release yapılandırmalarının üçü de',
+      );
+    });
+
+    test('test hedefine yazmaz', () {
+      // RunnerTests\'e takım yazmak imzalamayı bozmaz ama gereksizdir ve
+      // hedeflerin ayrı ayarlanabilmesini engeller.
+      final result = setDevelopmentTeam(_pbxprojWithTargets, '26BTDFQ8VY');
+      final testBlock = result.content.substring(
+        result.content.indexOf('331C80DB294CC9B700263BE5'),
+        result.content.indexOf('97C147031CF9000F007C117D'),
+      );
+      expect(testBlock, isNot(contains('DEVELOPMENT_TEAM')));
+    });
+
+    test('var olan takıma dokunmaz', () {
+      // Bu alan kullanıcının kararı; üzerine yazmak sessizce imzalamayı
+      // bozardı.
+      final once = setDevelopmentTeam(_pbxprojWithTargets, 'AAAAAAAAAA').content;
+      final twice = setDevelopmentTeam(once, 'BBBBBBBBBB').content;
+      expect(twice, once);
+      expect(twice, isNot(contains('BBBBBBBBBB')));
+    });
+
+    test('boş takım kimliği içeriği değiştirmez', () {
+      final result = setDevelopmentTeam(_pbxprojWithTargets, '');
+      expect(result.content, _pbxprojWithTargets);
+      expect(result.ok, isTrue);
+    });
+
+    test('Runner hedefi yoksa sebebini söyler', () {
+      final result = setDevelopmentTeam('/* boş proje */', '26BTDFQ8VY');
+      expect(result.ok, isFalse);
+      expect(result.problem, contains('Runner'));
     });
   });
 }

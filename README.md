@@ -56,6 +56,19 @@ uygulama ikonu ve gerçek AdMob kimlikleri.
 | `--no-pub-add` | Bağımlılıkları eklemez (ağsız ortam). |
 | `--no-git` | Depo başlatmaz. |
 
+### Hesap varsayılanları
+
+Makine başına bir kez girilen, her projede aynı olan değerler
+`~/.forge/account.json` içinde durur (panel yazar). `forge new` bunlardan
+**`APPLE_TEAM_ID`**'yi okuyup Xcode projesine yazar.
+
+Sebebi: takım seçilmeden provisioning profile üretilemez, dolayısıyla arşiv
+de alınamaz. `flutter create` bu alanı boş bırakır ve her yeni proje aynı
+engelle açılırdı. Değer yoksa adım atlanır ve sebebi ekrana yazılır —
+sessizce geçip kullanıcıyı `forge doctor` çıktısında şaşırtmak yerine.
+
+Var olan bir takım kimliğinin üzerine yazılmaz: o alan sizin kararınızdır.
+
 ### `forge doctor`
 
 Projeyi App Store ve Play Store yayınına hazır mı diye denetler.
