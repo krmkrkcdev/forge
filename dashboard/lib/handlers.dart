@@ -58,6 +58,8 @@ class Handlers {
           return _deploy(request);
         case 'api/server-deploy':
           return _serverDeploy(request);
+        case 'api/server-update':
+          return _serverUpdate(request);
         case 'api/config':
           return await _config(request);
         case 'api/config/upload':
@@ -1280,10 +1282,16 @@ class Handlers {
   /// Sunucu kodu GIT'TEN alır, bu makineden değil. Bu yüzden commit'lenmemiş
   /// ya da push'lanmamış iş varsa BAŞLAMAZ: yoksa "panelden kurdum ama
   /// değişikliğim yok" tuzağı doğar ve sebebi hiç görünmez.
-  Response _serverDeploy(Request request) {
+  /// "Sunucuya kur" ve "Sunucuyu güncelle" için ortak ön kontroller ve
+  /// hedef bilgisi. Hata varsa [_ServerTarget.error] dolu döner ve çağıran
+  /// onu olduğu gibi yanıtlar.
+  ///
+  /// İki düğme de kodu git'ten çektiği için aynı şartları ister: temiz
+  /// çalışma ağacı, push'lanmış dal, compose dosyası ve sabit proje adı.
+  _ServerTarget _serverTarget(Request request) {
     final path = request.url.queryParameters['path'];
     if (path == null || path.isEmpty) {
-      return _sseError('path parametresi gerekli');
+      return _ServerTarget.fail(_sseError('path parametresi gerekli'));
     }
 
     final account = _readAccount();
@@ -1294,9 +1302,11 @@ class Handlers {
 
     final host = setting('SERVER_HOST', '');
     if (host.isEmpty) {
-      return _sseError(
-        'Sunucu adresi tanımlı değil. Soldaki ⚙ Hesap Varsayılanları → '
-        '"Sunucu" bölümünü doldurun.',
+      return _ServerTarget.fail(
+        _sseError(
+          'Sunucu adresi tanımlı değil. Soldaki ⚙ Hesap Varsayılanları → '
+          '"Sunucu" bölümünü doldurun.',
+        ),
       );
     }
     final user = setting('SERVER_USER', 'root');
@@ -1305,40 +1315,50 @@ class Handlers {
     // Depo kökü: Flutter projesi app/ altında olabilir, git kökü üsttedir.
     final repoRoot = _gitOutput(path, ['rev-parse', '--show-toplevel']);
     if (repoRoot == null) {
-      return _sseError('Git deposu bulunamadı: $path');
+      return _ServerTarget.fail(_sseError('Git deposu bulunamadı: $path'));
     }
     final remoteUrl = _gitOutput(repoRoot, ['remote', 'get-url', 'origin']);
     if (remoteUrl == null || remoteUrl.isEmpty) {
-      return _sseError(
-        'Deponun "origin" uzak adresi yok. Sunucu kodu git\'ten çeker; '
-        'önce depoyu GitHub\'a bağlayın.',
+      return _ServerTarget.fail(
+        _sseError(
+          'Deponun "origin" uzak adresi yok. Sunucu kodu git\'ten çeker; '
+          'önce depoyu GitHub\'a bağlayın.',
+        ),
       );
     }
 
     // --- yerel iş bitmiş mi? (sunucu git'ten çekeceği için şart)
     final dirty = _gitOutput(repoRoot, ['status', '--porcelain']);
     if (dirty != null && dirty.isNotEmpty) {
-      return _sseError(
-        'Yerelde commit\'lenmemiş değişiklikler var. Sunucu git\'ten '
-        'çektiği için bunlar kurulmaz — önce commit\'leyip push edin.',
+      return _ServerTarget.fail(
+        _sseError(
+          'Yerelde commit\'lenmemiş değişiklikler var. Sunucu git\'ten '
+          'çektiği için bunlar kurulmaz — önce commit\'leyip push edin.',
+        ),
       );
     }
     final branch = _gitOutput(repoRoot, ['rev-parse', '--abbrev-ref', 'HEAD']);
     if (branch == null || branch.isEmpty || branch == 'HEAD') {
-      return _sseError('Geçerli bir dal bulunamadı (detached HEAD?).');
+      return _ServerTarget.fail(
+        _sseError('Geçerli bir dal bulunamadı (detached HEAD?).'),
+      );
     }
     final unpushed = _gitOutput(repoRoot, ['log', '--oneline', '@{u}..HEAD']);
     if (unpushed == null) {
-      return _sseError(
-        '"$branch" dalının uzak karşılığı yok. Önce gönderin:\n'
-        '  git push -u origin $branch',
+      return _ServerTarget.fail(
+        _sseError(
+          '"$branch" dalının uzak karşılığı yok. Önce gönderin:\n'
+          '  git push -u origin $branch',
+        ),
       );
     }
     if (unpushed.isNotEmpty) {
       final count = unpushed.split('\n').where((l) => l.isNotEmpty).length;
-      return _sseError(
-        'Gönderilmemiş $count commit var — sunucu bunları göremez. Önce:\n'
-        '  git push\n\n$unpushed',
+      return _ServerTarget.fail(
+        _sseError(
+          'Gönderilmemiş $count commit var — sunucu bunları göremez. Önce:\n'
+          '  git push\n\n$unpushed',
+        ),
       );
     }
 
@@ -1352,16 +1372,17 @@ class Handlers {
       }
     }
     if (composeDir == null) {
-      return _sseError(
-        'docker-compose.yml bulunamadı (bakılan yerler: '
-        '${candidates.join(", ")}). Sunucuya kurulacak bir servis yok.',
+      return _ServerTarget.fail(
+        _sseError(
+          'docker-compose.yml bulunamadı (bakılan yerler: '
+          '${candidates.join(", ")}). Sunucuya kurulacak bir servis yok.',
+        ),
       );
     }
 
-    final composeFile = File(
+    final composeText = File(
       p.join(repoRoot, composeDir, 'docker-compose.yml'),
-    );
-    final composeText = composeFile.readAsStringSync();
+    ).readAsStringSync();
 
     // --- compose proje adı sabit mi?
     //
@@ -1372,19 +1393,120 @@ class Handlers {
     // çevrimdışı kaldı), bu yüzden kurulum burada durur.
     final projectName = composeProjectName(composeText);
     if (projectName == null) {
-      return _sseError(
-        '$composeDir/docker-compose.yml proje adı tanımlamıyor.\n\n'
-        'Ad verilmezse Docker onu klasör adından ("$composeDir") türetir ve '
-        'aynı sunucudaki başka bir yığın da aynı adı kullanıyorsa onun '
-        'konteynerlerini siler, veritabanını devralır. Dosyanın en üstüne '
-        'ekleyin:\n\n'
-        '  name: ${p.basename(repoRoot)}',
+      return _ServerTarget.fail(
+        _sseError(
+          '$composeDir/docker-compose.yml proje adı tanımlamıyor.\n\n'
+          'Ad verilmezse Docker onu klasör adından ("$composeDir") türetir ve '
+          'aynı sunucudaki başka bir yığın da aynı adı kullanıyorsa onun '
+          'konteynerlerini siler, veritabanını devralır. Dosyanın en üstüne '
+          'ekleyin:\n\n'
+          '  name: ${p.basename(repoRoot)}',
+        ),
       );
     }
 
     final name = p.basename(repoRoot);
-    final target = p.posix.join(base, name);
-    final cloneUrl = _sunucuGitAdresi(remoteUrl);
+    return _ServerTarget(
+      repoRoot: repoRoot,
+      host: host,
+      user: user,
+      base: base,
+      target: p.posix.join(base, name),
+      cloneUrl: _sunucuGitAdresi(remoteUrl),
+      branch: branch,
+      composeDir: composeDir,
+      projectName: projectName,
+    );
+  }
+
+  /// Kurulumdan/güncellemeden sonra durumu doğrulayan ortak betik parçası:
+  /// "başladı" ile "çalışıyor" aynı şey değil; restart döngüsü sessizce
+  /// başarılı görünüyordu.
+  static const _saglikKontrolu = '''
+echo "→ durum bekleniyor (20 sn)…"
+sleep 20
+echo "→ durum:"
+docker compose ps
+if docker compose ps --format '{{.Name}} {{.State}}' 2>/dev/null | grep -qi restart; then
+  echo ""
+  echo "✋ UYARI: bir konteyner restart döngüsünde. Son loglar:"
+  docker compose logs --tail 25
+  exit 1
+fi
+''';
+
+  Response _sshRun(_ServerTarget t, String script) {
+    return _spawn('ssh', [
+      // BatchMode: anahtar yoksa şifre beklemek yerine hemen ve anlaşılır
+      // biçimde başarısız olur — panel etkileşimli soru soramaz.
+      '-o', 'BatchMode=yes',
+      '-o', 'StrictHostKeyChecking=accept-new',
+      '${t.user}@${t.host}',
+      script,
+    ], workingDir: t.repoRoot);
+  }
+
+  /// "Sunucuyu güncelle": var olan kurulumu git'ten çeker ve konteynerleri
+  /// yeniden kurar. İlk kurulumun aksine .env üretmez, port bakmaz — o
+  /// adımlar bir kez yapılır; burada yalnızca kod değişir.
+  ///
+  /// `docker compose up -d --build` bilinçli: kod imaja COPY ile giriyor,
+  /// dolayısıyla "restart" tek başına eski kodu yeniden başlatırdı.
+  /// Değişmeyen imaj katmanları önbellekten gelir, yani bu hızlıdır.
+  Response _serverUpdate(Request request) {
+    final t = _serverTarget(request);
+    final error = t.error;
+    if (error != null) return error;
+
+    final script =
+        '''
+set -e
+if [ ! -d ${_shq('${t.target}/.git')} ]; then
+  echo "✋ DURDU: sunucuda kurulum yok: ${_shq(t.target)}"
+  echo "   Önce "Sunucuya kur" düğmesini kullanın."
+  exit 1
+fi
+cd ${_shq(t.target)}
+eski=\$(git rev-parse --short HEAD)
+echo "→ sunucudaki sürüm: \$eski (\$(git log -1 --pretty=%s))"
+echo "→ git fetch + pull (${_shq(t.branch)})"
+git fetch --prune origin
+git checkout ${_shq(t.branch)}
+git pull --ff-only
+yeni=\$(git rev-parse --short HEAD)
+if [ "\$eski" = "\$yeni" ]; then
+  echo "→ yeni commit yok; konteynerler yine de yeniden kuruluyor"
+else
+  echo "→ yeni sürüm: \$yeni (\$(git log -1 --pretty=%s))"
+  echo "→ gelen commit'ler:"
+  git log --oneline "\$eski..\$yeni" | sed 's/^/     /'
+fi
+cd ${_shq(t.composeDir)}
+if [ ! -f .env ]; then
+  echo "✋ DURDU: ${_shq(t.composeDir)}/.env yok. Bu bir ilk kurulum; "Sunucuya kur" kullanın."
+  exit 1
+fi
+echo "→ docker compose up -d --build  (${_shq(t.composeDir)})"
+docker compose up -d --build
+$_saglikKontrolu
+echo "✅ güncelleme tamam — \$yeni çalışıyor"
+port=\$(grep -E '^API_PORT=' .env 2>/dev/null | cut -d= -f2 | tr -d ' ' || true)
+echo "   yerel doğrulama:  curl 127.0.0.1:\${port:-8000}/health"
+''';
+
+    return _sshRun(t, script);
+  }
+
+  Response _serverDeploy(Request request) {
+    final t = _serverTarget(request);
+    final error = t.error;
+    if (error != null) return error;
+    final target = t.target;
+    final base = t.base;
+    final branch = t.branch;
+    final cloneUrl = t.cloneUrl;
+    final composeDir = t.composeDir;
+    final projectName = t.projectName;
 
     // Uzak kabukta çalışacak betik. Değerler tek tırnakla kaçırılır:
     // kullanıcının girdiği yol/ad uzak kabukta komuta dönüşemez.
@@ -1461,28 +1583,12 @@ echo "→ docker compose up -d --build  (${_shq(composeDir)})"
 docker compose up -d --build
 
 # 4) gerçekten çalışıyor mu? (başladı ≠ çalışıyor)
-echo "→ durum bekleniyor (20 sn)…"
-sleep 20
-echo "→ durum:"
-docker compose ps
-if docker compose ps --format '{{.Name}} {{.State}}' 2>/dev/null | grep -qi restart; then
-  echo ""
-  echo "✋ UYARI: bir konteyner restart döngüsünde. Son loglar:"
-  docker compose logs --tail 25
-  exit 1
-fi
+$_saglikKontrolu
 echo "✅ kurulum tamam — konteynerler ayakta"
 echo "   yerel doğrulama:  curl 127.0.0.1:\$port/health"
 ''';
 
-    return _spawn('ssh', [
-      // BatchMode: anahtar yoksa şifre beklemek yerine hemen ve anlaşılır
-      // biçimde başarısız olur — panel etkileşimli soru soramaz.
-      '-o', 'BatchMode=yes',
-      '-o', 'StrictHostKeyChecking=accept-new',
-      '$user@$host',
-      script,
-    ], workingDir: repoRoot);
+    return _sshRun(t, script);
   }
 
   /// Git komutunu çalıştırır ve çıktısını döndürür; komut başarısızsa `null`.
@@ -1772,4 +1878,42 @@ String resolveForgeRoot() {
   }
   // Son çare: çalışma dizini.
   return Directory.current.path;
+}
+
+/// Sunucu düğmelerinin ön kontrolden geçmiş hedefi. [error] doluysa diğer
+/// alanlar anlamsızdır; çağıran yanıtı olduğu gibi döndürür.
+class _ServerTarget {
+  _ServerTarget({
+    required this.repoRoot,
+    required this.host,
+    required this.user,
+    required this.base,
+    required this.target,
+    required this.cloneUrl,
+    required this.branch,
+    required this.composeDir,
+    required this.projectName,
+  }) : error = null;
+
+  _ServerTarget.fail(this.error)
+      : repoRoot = '',
+        host = '',
+        user = '',
+        base = '',
+        target = '',
+        cloneUrl = '',
+        branch = '',
+        composeDir = '',
+        projectName = '';
+
+  final Response? error;
+  final String repoRoot;
+  final String host;
+  final String user;
+  final String base;
+  final String target;
+  final String cloneUrl;
+  final String branch;
+  final String composeDir;
+  final String projectName;
 }

@@ -34,6 +34,11 @@ klasörüne depoyu klonlar (varsa `git pull` ile günceller), `.env` yoksa
 üretir ve `docker compose up -d --build` çalıştırır. Kodu **git'ten** alır —
 commit'lenmemiş ya da push'lanmamış iş varsa hiç başlamaz.
 
+Sonraki geliştirmelerde **Sunucuyu güncelle** düğmesi yeter: sunucuda
+`git pull` yapar, gelen commit'leri listeler ve konteynerleri
+`docker compose up -d --build` ile yeniden kurar. `.env`'e, porta ve
+veritabanına dokunmaz; kurulum yoksa "önce Sunucuya kur" der.
+
 Kurulumdan sonra ters vekilde (Nginx Proxy Manager) bir Proxy Host eklenir:
 
 | Alan | Değer |

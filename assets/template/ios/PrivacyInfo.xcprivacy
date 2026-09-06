@@ -17,18 +17,33 @@
 -->
 <plist version="1.0">
 <dict>
-	<!-- İzleme (ATT) yapılıyor: kullanıcı izin verirse reklam kimliği
-	     (IDFA) üçüncü taraf reklamcılık için kullanılır. Bu değer true
-	     iken DÖRT şey birden doğru olmalı, yoksa inceleme reddedilir:
-	       1. pubspec.yaml → app_tracking_transparency
-	       2. Info.plist → NSUserTrackingUsageDescription
-	       3. Kod → AppTrackingTransparency.requestTrackingAuthorization
-	       4. App Store Connect gizlilik anketi → aynı türler için
-	          "izleme amaçlı: Evet"
-	     İzleme istemiyorsanız dördünü de geri alın ve bu değeri false
-	     yapın; ARADA KALMAK reddedilir (docs/REKLAM.md). -->
+	<!-- BU ANAHTAR BİLİNÇLİ OLARAK false — DEĞİŞTİRMEYİN.
+	
+	     Uygulama ATT izni istese ve App Store Connect gizlilik anketinde
+	     "izleme amaçlı: Evet" işaretli olsa bile burası false kalır. Bu dosya
+	     uygulamanın KENDİ ikilisinin hangi alan adlarına izleme amaçlı
+	     bağlandığını anlatır; reklam SDK'sının davranışını değil.
+	
+	     true yapmak iki şekilde zarar verir:
+	
+	     1. Apple, NSPrivacyTracking true ise NSPrivacyTrackingDomains'in EN AZ
+	        BİR alan adı içermesini şart koşar. Boş bırakılan sürüm yükleme
+	        aşamasında reddedilir ve sürüm "Invalid Binary" durumuna düşer:
+	          ITMS-91064: Invalid tracking information
+	        Bu gerçekten yaşandı; bir build turu buna gitti.
+	
+	     2. Diziyi doldurmak daha kötüsüdür: iOS, ATT izni VERİLMEMİŞ
+	        kullanıcıda burada yazan alan adlarına giden istekleri ENGELLER.
+	        Google'ın reklam alan adlarını yazarsanız izin vermeyen kullanıcıda
+	        reklamlar kişiselleştirilmemiş olarak değil, HİÇ gelmez. Google
+	        hangi alan adlarının yazılacağını yayımlamıyor ve kendi
+	        manifestinde de beyan etmiyor; SDK ATT durumunu kendisi okuyup
+	        kişiselleştirmeyi ona göre kapatıyor.
+	
+	     Özet: izleme beyanı ASC anketi + ATT diyaloğu ile yapılır, bu dosya
+	     ile değil (docs/REKLAM.md). -->
 	<key>NSPrivacyTracking</key>
-	<true/>
+	<false/>
 	<key>NSPrivacyTrackingDomains</key>
 	<array/>
 
@@ -44,7 +59,7 @@
 			<key>NSPrivacyCollectedDataTypeLinked</key>
 			<false/>
 			<key>NSPrivacyCollectedDataTypeTracking</key>
-			<true/>
+			<false/>
 			<key>NSPrivacyCollectedDataTypePurposes</key>
 			<array>
 				<string>NSPrivacyCollectedDataTypePurposeThirdPartyAdvertising</string>
@@ -56,7 +71,7 @@
 			<key>NSPrivacyCollectedDataTypeLinked</key>
 			<false/>
 			<key>NSPrivacyCollectedDataTypeTracking</key>
-			<true/>
+			<false/>
 			<key>NSPrivacyCollectedDataTypePurposes</key>
 			<array>
 				<string>NSPrivacyCollectedDataTypePurposeThirdPartyAdvertising</string>

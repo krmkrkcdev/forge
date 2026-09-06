@@ -155,7 +155,7 @@ seçmek gibi **kararlar size aittir**; araç bunları sizin yerinize vermez.
 | `NSUserTrackingUsageDescription` | Engel | ATT izni isteyen uygulama çalışma anında çöker |
 | UMP formu var, ATT izni istenmiyor | Engel | Apple UMP formunu "özel izleme ekranı" sayar: 5.1.2(i) reddi |
 | ATT paketi eklenmiş, çağrı yapılmamış | Engel | Paketi eklemek diyaloğu göstermez; aynı redde geri dönülür |
-| `NSPrivacyTracking` ile kodun çelişmesi | Engel | Yanlış beyan; iki yönü de reddedilir |
+| `NSPrivacyTracking` true ama alan adı listesi boş | Engel | ITMS-91064: sürüm "Invalid Binary" olur, build turu çöpe gider |
 | `ITSAppUsesNonExemptEncryption` | Uyarı | Her yüklemede elle soru |
 | `PrivacyInfo.xcprivacy` varlığı | Uyarı | Apple zorunlu tutuyor |
 | Paket kimliği tutarlılığı | Uyarı | Derin bağlantı ve analitikte karışıklık |

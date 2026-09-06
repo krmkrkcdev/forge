@@ -35,7 +35,7 @@ const List<Check> allChecks = [
   _iosAttNeverRequested,
   _iosAttPackageUnused,
   _privacyManifestIgnoresAds,
-  _privacyManifestTrackingMismatch,
+  _privacyManifestTrackingDomains,
 ];
 
 List<Finding> runChecks(FlutterProject project) {
@@ -558,51 +558,44 @@ Finding? _privacyManifestIgnoresAds(FlutterProject p) {
   );
 }
 
-/// Gizlilik manifesti ile kodun anlattığı hikâye çelişiyor.
+/// `NSPrivacyTracking` true ama izleme alan adı listesi boş.
 ///
-/// App Store Connect gizlilik anketi de aynı hikâyeyi anlatmak zorunda.
-/// Üçünden biri diğerlerini tutmadığında red gerekçesi "yanlış beyan"dır ve
-/// düzeltmesi yeni bir build + yeni bir inceleme turu demektir.
-Finding? _privacyManifestTrackingMismatch(FlutterProject p) {
+/// Apple bu ikisini bir arada kabul etmez; yükleme aşamasında reddeder ve
+/// sürüm "Invalid Binary" durumuna düşer:
+///
+///   ITMS-91064: Invalid tracking information — NSPrivacyTracking must be
+///   true if NSPrivacyTrackingDomains isn't empty.
+///
+/// Bunu ancak derleme, imzalama ve yükleme turunu tamamen harcadıktan SONRA,
+/// üstelik e-postayla öğrenirsiniz. Gerçekten yaşandı; bir build turu buna
+/// gitti.
+///
+/// Diziyi doldurmak da çözüm değildir: iOS, ATT izni verilmemiş kullanıcıda
+/// burada yazan alan adlarına giden istekleri ENGELLER. Google'ın reklam
+/// alan adlarını yazan uygulama, izin vermeyen kullanıcıda reklamları
+/// kişiselleştirilmemiş olarak değil HİÇ gösteremez. Doğrusu bu anahtarı
+/// false bırakmak; izleme beyanı App Store Connect anketi ve ATT diyaloğu
+/// ile yapılır.
+Finding? _privacyManifestTrackingDomains(FlutterProject p) {
   if (!p.hasIos) return null;
-  final declared = p.iosPrivacyManifestTracking;
-  if (declared == null) return null; // manifest ya da anahtar yok: ayrı kural
-
-  // Ölçüt kodun ne YAPTIĞIDIR, pubspec'te ne yazdığı değil: paketin eksik
-  // olması ayrı bir kuralın konusu ve orada zaten söyleniyor.
-  final requests = p.requestsTrackingAuthorization;
-  if (declared == requests) return null;
-
-  if (requests) {
-    return const Finding(
-      id: 'privacy-manifest-tracking-false',
-      severity: Severity.blocker,
-      platform: Platform.ios,
-      title: 'Kod izleme izni istiyor ama manifest NSPrivacyTracking=false '
-          'diyor',
-      why: 'Uygulama izin isterken "izleme yapmıyorum" beyan ediyor. Bu '
-          'çelişki App Store incelemesinde yanlış beyan sayılır ve '
-          'reddedilir.',
-      fix: 'ios/Runner/PrivacyInfo.xcprivacy içinde NSPrivacyTracking '
-          'değerini true yapın, reklam veri türlerinde '
-          'NSPrivacyCollectedDataTypeTracking değerini true olarak '
-          'işaretleyin ve App Store Connect gizlilik anketinde de aynı '
-          'cevabı verin (Cihaz Kimliği + Reklam Verisi → izleme: Evet).',
-    );
-  }
+  if (p.iosPrivacyManifestTracking != true) return null;
+  if (!p.iosPrivacyTrackingDomainsEmpty) return null;
 
   return const Finding(
-    id: 'privacy-manifest-tracking-true',
+    id: 'privacy-manifest-tracking-domains-empty',
     severity: Severity.blocker,
     platform: Platform.ios,
-    title: 'Manifest NSPrivacyTracking=true diyor ama izin hiç istenmiyor',
-    why: 'Beyan izleme yapıldığını söylüyor; kod ise Apple\'ın izin '
-        'diyaloğunu hiç açmıyor. İzinsiz izleme, incelemenin en sert '
-        'reddettiği durumdur.',
-    fix: 'Ya izni gerçekten isteyin (app_tracking_transparency + '
-        'requestTrackingAuthorization), ya da NSPrivacyTracking değerini '
-        'false yapıp reklam veri türlerindeki izleme işaretlerini kaldırın. '
-        'Ayrıntı: docs/REKLAM.md',
+    title: 'NSPrivacyTracking true ama NSPrivacyTrackingDomains boş',
+    why: 'Apple bu ikisini bir arada kabul etmez: yükleme sonrası işlemede '
+        'ITMS-91064 ile reddeder ve sürüm "Invalid Binary" durumuna düşer. '
+        'Hatayı ancak tam bir derleme ve yükleme turunu harcadıktan sonra, '
+        'üstelik e-postayla öğrenirsiniz.',
+    fix: 'NSPrivacyTracking değerini false yapın. İzleme beyanı bu dosyayla '
+        'değil, App Store Connect gizlilik anketi ve ATT diyaloğuyla '
+        'yapılır.\n'
+        'Alan adı listesini DOLDURARAK düzeltmeye çalışmayın: iOS, ATT izni '
+        'verilmemiş kullanıcıda o alan adlarına giden istekleri engeller — '
+        'reklamlar kişiselleştirilmemiş olarak değil, hiç gelmez.',
   );
 }
 

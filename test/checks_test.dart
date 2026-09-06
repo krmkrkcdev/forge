@@ -339,6 +339,7 @@ void main() {
       bool att = false,
       bool attCall = false,
       bool? manifestTracking,
+      List<String> trackingDomains = const [],
     }) {
       fixture.write(
         'pubspec.yaml',
@@ -360,10 +361,15 @@ void main() {
         '}\n',
       );
       if (manifestTracking != null) {
+        final domains = trackingDomains
+            .map((d) => '<string>$d</string>')
+            .join();
+        final domainsXml = domains.isEmpty ? '<array/>' : '<array>$domains</array>';
         fixture.write(
           'ios/Runner/PrivacyInfo.xcprivacy',
           '<plist><dict>'
           '<key>NSPrivacyTracking</key><$manifestTracking/>'
+          '<key>NSPrivacyTrackingDomains</key>$domainsXml'
           '<string>NSPrivacyCollectedDataTypeDeviceID</string>'
           '</dict></plist>',
         );
@@ -405,33 +411,53 @@ void main() {
       expect(findingWithId(fixture.project, 'ios-att-package-unused'), isNull);
     });
 
-    test('izin isteniyorken manifest false diyorsa engel', () {
-      writeAdProject(att: true, attCall: true, manifestTracking: false);
-
-      final finding =
-          findingWithId(fixture.project, 'privacy-manifest-tracking-false');
-      expect(finding, isNotNull);
-      expect(finding!.severity, Severity.blocker);
-    });
-
-    test('manifest true diyorken izin istenmiyorsa engel', () {
-      writeAdProject(manifestTracking: true);
-
-      expect(
-        findingWithId(fixture.project, 'privacy-manifest-tracking-true'),
-        isNotNull,
-      );
-    });
-
-    test('ikisi de aynı hikâyeyi anlatıyorsa sessiz kalır', () {
+    test('NSPrivacyTracking true ama alan adı listesi boşsa engel', () {
+      // ITMS-91064. Apple bunu yükleme SONRASI işlemede yakalar ve sürümü
+      // "Invalid Binary" yapar; yani hatayı tam bir build + yükleme turunu
+      // harcadıktan sonra, e-postayla öğrenirsiniz. Bu kuralın tek amacı o
+      // turu kurtarmak.
       writeAdProject(att: true, attCall: true, manifestTracking: true);
 
+      final finding = findingWithId(
+        fixture.project,
+        'privacy-manifest-tracking-domains-empty',
+      );
+      expect(finding, isNotNull);
+      expect(finding!.severity, Severity.blocker);
+      expect(finding.platform, Platform.ios);
+    });
+
+    test('alan adı listesi doluysa sessiz kalır', () {
+      writeAdProject(
+        att: true,
+        attCall: true,
+        manifestTracking: true,
+        trackingDomains: ['ornek.com'],
+      );
+
       expect(
-        findingWithId(fixture.project, 'privacy-manifest-tracking-true'),
+        findingWithId(
+          fixture.project,
+          'privacy-manifest-tracking-domains-empty',
+        ),
         isNull,
       );
+    });
+
+    test('NSPrivacyTracking false ise sessiz kalır — doğru yapılandırma bu',
+        () {
+      // ATT isteyen ama manifestte tracking=false olan proje ÇELİŞKİLİ
+      // değildir: bu dosya uygulamanın kendi ikilisini anlatır, izleme
+      // beyanı ASC anketi ve ATT diyaloğuyla yapılır. Manifesti true'ya
+      // çekmek hem ITMS-91064'e hem de (liste doldurulursa) izin vermeyen
+      // kullanıcıda reklamların tamamen kesilmesine yol açar.
+      writeAdProject(att: true, attCall: true, manifestTracking: false);
+
       expect(
-        findingWithId(fixture.project, 'privacy-manifest-tracking-false'),
+        findingWithId(
+          fixture.project,
+          'privacy-manifest-tracking-domains-empty',
+        ),
         isNull,
       );
     });
@@ -446,8 +472,7 @@ void main() {
       for (final id in [
         'ios-att-never-requested',
         'ios-att-package-unused',
-        'privacy-manifest-tracking-true',
-        'privacy-manifest-tracking-false',
+        'privacy-manifest-tracking-domains-empty',
       ]) {
         expect(findingWithId(fixture.project, id), isNull, reason: id);
       }

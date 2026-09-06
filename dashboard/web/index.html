@@ -111,6 +111,10 @@
               <button data-act="server-deploy" class="publish">🖥 Sunucuya kur (git + docker)</button>
               <small class="hint">SSH ile bağlanır: klasörü <strong>açar</strong>, depoyu <strong>çeker</strong> (ilk seferde klonlar) ve <code>docker compose up -d --build</code> çalıştırır. <strong>Kod git'ten gider</strong> — commit'lenmemiş ya da push'lanmamış iş varsa başlamaz ve nedenini söyler. Sunucu bilgileri: ⚙ Hesap Varsayılanları → Sunucu.</small>
             </div>
+            <div class="act-item">
+              <button data-act="server-update" class="publish">🔄 Sunucuyu güncelle (git pull + restart)</button>
+              <small class="hint">Var olan kurulum için: sunucuda <code>git pull</code> yapar, gelen commit'leri listeler ve konteynerleri yeniden kurar (<code>docker compose up -d --build</code>). <code>.env</code>'e ve porta dokunmaz; kurulum yoksa "önce Sunucuya kur" der. Yine <strong>kod git'ten gider</strong>: önce commit + push.</small>
+            </div>
           </div>
 
           <div class="action-group plat-ios">

@@ -131,8 +131,36 @@ diğerleri kusursuz olsa bile inceleme reddedilir:
 2. `Info.plist` → `NSUserTrackingUsageDescription` (metin yoksa uygulama
    izin istediği anda **çöker**)
 3. Kod → `AppTrackingTransparency.requestTrackingAuthorization()`
-4. `PrivacyInfo.xcprivacy` → `NSPrivacyTracking = true` **ve** App Store
-   Connect gizlilik anketinde aynı cevap
+4. App Store Connect gizlilik anketi → Cihaz Kimliği ve Reklam Verisi için
+   "izleme amaçlı: Evet"
+
+### `PrivacyInfo.xcprivacy` bu listede YOK — ve olmamalı
+
+Sezgiye aykırı ama denenip öğrenildi: `NSPrivacyTracking` anahtarı **false
+kalır.** İki sebep var, ikisi de pahalı:
+
+1. **Apple boş listeyi reddeder.** `NSPrivacyTracking` true ise
+   `NSPrivacyTrackingDomains` en az bir alan adı içermek zorundadır. Boş
+   bırakılan sürüm yüklendikten sonra işleme aşamasında elenir ve sürüm
+   **Invalid Binary** durumuna düşer:
+
+   > ITMS-91064: Invalid tracking information — NSPrivacyTracking must be
+   > true if NSPrivacyTrackingDomains isn't empty.
+
+   Bunu ancak tam bir derleme + imzalama + yükleme turunu harcadıktan sonra,
+   e-postayla öğrenirsiniz. `forge doctor` artık build almadan önce yakalar.
+
+2. **Listeyi doldurmak daha kötüdür.** iOS, ATT izni **verilmemiş**
+   kullanıcıda burada yazan alan adlarına giden istekleri **engeller.**
+   Google'ın reklam alan adlarını yazarsanız izin vermeyen kullanıcıda
+   reklamlar kişiselleştirilmemiş olarak değil, **hiç** gelmez — doğrudan
+   gelir kaybı. Google zaten hangi alan adlarının yazılacağını yayımlamıyor
+   ve kendi manifestinde de beyan etmiyor; SDK, ATT durumunu kendisi okuyup
+   kişiselleştirmeyi ona göre kapatıyor.
+
+Bu dosya uygulamanın **kendi ikilisinin** hangi alan adlarına izleme amaçlı
+bağlandığını anlatır; reklam SDK'sının davranışını değil. İzleme beyanı ASC
+anketi ve ATT diyaloğuyla yapılır.
 
 `AdService.init()` sırası sabittir ve değiştirilmez:
 
@@ -145,9 +173,9 @@ Açılışta, ilk kare çizilmeden istenen izin diyalog hiç görünmeden
 `notDetermined` ile döner ve bir daha sorulamaz — hata mesajı da yoktur.
 `AdService` bu yüzden ilk kareyi bekler.
 
-İzin istemek istemiyorsanız alternatif bellidir: `NSPrivacyTracking` `false`
-kalır, reklamlar kişiselleştirilmez **ve** AdMob konsolundaki ATT mesajı
-yayından kaldırılır. Yayında dururken izin istememek, yukarıdaki redle
+İzin istemek istemiyorsanız alternatif bellidir: ATT çağrısı ile
+`NSUserTrackingUsageDescription` kaldırılır, reklamlar kişiselleştirilmez
+**ve** AdMob konsolundaki ATT mesajı yayından kaldırılır. Yayında dururken izin istememek, yukarıdaki redle
 sonuçlanan durumun ta kendisidir.
 
 ## Android tarafı

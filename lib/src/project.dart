@@ -83,6 +83,22 @@ class FlutterProject {
   bool get requestsTrackingAuthorization =>
       libContains('requestTrackingAuthorization');
 
+  /// Gizlilik manifestinde `NSPrivacyTrackingDomains` dizisi boş mu?
+  ///
+  /// Anahtar hiç yoksa da "boş" sayılır: Apple'ın doğrulaması ikisini aynı
+  /// biçimde ele alıyor.
+  bool get iosPrivacyTrackingDomainsEmpty {
+    final content = read('ios/Runner/PrivacyInfo.xcprivacy');
+    if (content == null) return true;
+    final match = RegExp(
+      r'<key>NSPrivacyTrackingDomains</key>\s*<array\s*(/>|>(.*?)</array>)',
+      dotAll: true,
+    ).firstMatch(content);
+    if (match == null) return true; // anahtar yok
+    final body = match.group(2);
+    return body == null || !body.contains('<string>');
+  }
+
   /// Gizlilik manifestindeki `NSPrivacyTracking` değeri; anahtar ya da
   /// dosya yoksa `null`.
   bool? get iosPrivacyManifestTracking {

@@ -267,6 +267,7 @@ function hideRunPill() {
 
 // Bir SSE ucunu açar ve konsola akıtır. Bittiğinde projeleri tazeler.
 function stream(url, title) {
+  state.gotLine = false;
   if (state.running) {
     // alert() KULLANMA: kip pencere JS'i dondurur ve akan SSE satırlarının
     // işlenmesini de durdurur — konsol "takıldı" gibi görünürdü.
@@ -286,11 +287,15 @@ function stream(url, title) {
   state.es = es;
 
   es.addEventListener('start', (e) => {
+    state.gotLine = true;
     const d = JSON.parse(e.data);
     log(`$ ${d.cmd}`);
     log(`  (${d.cwd})\n`);
   });
-  es.addEventListener('line', (e) => log(JSON.parse(e.data).text));
+  es.addEventListener('line', (e) => {
+    state.gotLine = true;
+    log(JSON.parse(e.data).text);
+  });
   es.addEventListener('done', (e) => {
     const d = JSON.parse(e.data);
     const st = $('#console-status');
@@ -317,6 +322,15 @@ function stream(url, title) {
         st.className = 'status fail';
         runPill('fail', '✗ ' + $('#console-title').textContent
           + ' — bağlantı kesildi');
+        // Tek satır bile gelmeden koptuysa sunucu bu uç adresi tanımıyor
+        // olabilir: panel kodu değişmiş ama çalışan `dart run serve.dart`
+        // süreci eski. Bunu söylemeyince "sunucu çöktü" sanılıyor.
+        if (!state.gotLine) {
+          log('Sunucudan hiç çıktı gelmedi. Panelin sunucu tarafı (serve.dart) '
+            + 'güncellendiyse çalışan süreç eski kalmış olabilir — terminalde '
+            + 'durdurup yeniden başlatın:\n'
+            + '  dart run dashboard/serve.dart\n');
+        }
       }
       finishStream();
     }
@@ -369,6 +383,13 @@ function act(which) {
           +'ve <code>docker compose up -d --build</code> çalıştırılacak. '
           + 'Çalışan konteyner yeniden başlatılır.',
       }, () => stream('api/server-deploy?' + q, 'Sunucuya kurulum'));
+    case 'server-update':
+      return confirmThen({
+        title: 'Sunucuyu güncelle',
+        body: 'Sunucuda <code>git pull</code> yapılacak ve konteynerler '
+          + '<code>docker compose up -d --build</code> ile yeniden kurulacak. '
+          + 'Kısa bir kesinti olur; <code>.env</code> ve veritabanına dokunulmaz.',
+      }, () => stream('api/server-update?' + q, 'Sunucu güncelleniyor'));
     case 'upgrade':
       return stream('api/update?' + q + '&upgrade=1', 'flutter pub upgrade');
     // Platform başına ayrı akış: Android'deki bir eksik iOS yayınını
