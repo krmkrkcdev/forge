@@ -3,7 +3,9 @@
 # yeniden başlatır. handlers.dart değişince gerekir; web dosyaları diskten
 # okunduğu için sayfa yenilemek yetmez, süreç yenilenmeli.
 cd "$(dirname "$0")"
-export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/development/flutter/bin:$HOME/flutter/bin:$PATH"
+# Homebrew SONA eklenir: başa konursa Homebrew Ruby, chruby'nin seçtiği Ruby'yi
+# gölgeler ve deploy.sh içindeki "bundle exec fastlane" çöker (yaşandı).
+export PATH="$PATH:$HOME/development/flutter/bin:$HOME/flutter/bin:/opt/homebrew/bin:/usr/local/bin"
 {
   echo "=== $(date) ==="
   # `dart run` başlatıcısı ile altındaki VM ayrı süreçler; portu tutan

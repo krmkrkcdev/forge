@@ -151,19 +151,70 @@ if [ "$PLATFORM" = "android" ] || [ "$PLATFORM" = "all" ]; then
 fi
 
 # ---------- Ruby / bundler ön kontrolü ----------
-# Fastlane "bundle exec" ile çalışır. PATH'te yanlış Ruby varsa (örn. panel
-# launchd servisiyken sistem Ruby'sinin /usr/bin/bundle'ı) bundler Gemfile.lock
-# sürümünü bulamaz — ve bu hata dakikalarca süren build'den SONRA patlar.
-# Burada 2 saniyede, build harcamadan yakalıyoruz.
-if ! bundle exec fastlane --version >/dev/null 2>&1; then
-  echo "❌ 'bundle exec fastlane' çalıştırılamadı."
-  echo "   Kullanılan bundle: $(command -v bundle || echo bulunamadı)"
-  echo "   Olası nedenler ve çözümler:"
-  echo "   • PATH'te yanlış Ruby: doğru Ruby'nin bin dizinini PATH'e ekleyin"
-  echo "     (panel launchd ile çalışıyorsa plist'teki PATH'e de)."
-  echo "   • Gem'ler eksik: bundle install"
+# Fastlane "bundle exec" ile çalışır ve bu makinede birden fazla Ruby var
+# (chruby'nin ~/.rubies'i, Homebrew'un ruby'si, sistem Ruby'si). Tuzak şu:
+# kabuk profili chruby ile GEM_HOME'u Ruby 3.2'ye ayarlar, ama PATH'in başına
+# sonradan /opt/homebrew/bin girer. `bundle` artık Homebrew'un Ruby 4'üyle
+# çalışır, Ruby 3.2 için kurulmuş gem'leri yüklemeye kalkar ve çöker.
+# Yaşandı (2026-09, bubble_2048 ilk TestFlight): "bundle exec fastlane
+# çalıştırılamadı". Çözüm: ruby, gem ve bundle'ı TEK ve aynı Ruby'den kullan,
+# gem'ler eksikse (yeni proje, Gemfile.lock yok) kur, hata olursa tahmin
+# değil gerçek çıktıyı göster. Hepsi build harcamadan, saniyeler içinde.
+ruby_ortami_hazirla() {
+  local chruby_sh=/opt/homebrew/opt/chruby/share/chruby/chruby.sh
+  if [ -n "${RUBY_ROOT:-}" ] && [ -x "$RUBY_ROOT/bin/ruby" ]; then
+    # 1) chruby bu kabukta zaten aktif: seçtiği Ruby'yi PATH'in BAŞINA al ki
+    #    sonradan öne geçen /opt/homebrew/bin onu gölgelemesin.
+    export PATH="${GEM_HOME:+$GEM_HOME/bin:}$RUBY_ROOT/bin:$PATH"
+  elif [ -f "$chruby_sh" ] && [ -d "$HOME/.rubies" ]; then
+    # 2) chruby kurulu ama yüklenmemiş (panel launchd'den ya da profil
+    #    okunmadan başlatıldığında olur): yükle, .ruby-version varsa onu,
+    #    yoksa kurulu en yeni Ruby'yi seç.
+    set +u
+    # shellcheck disable=SC1090
+    . "$chruby_sh"
+    if [ -f .ruby-version ]; then
+      chruby "$(cat .ruby-version)" || true
+    else
+      chruby "$(ls "$HOME/.rubies" | tail -1)" || true
+    fi
+    set -u
+    if [ -n "${RUBY_ROOT:-}" ]; then
+      export PATH="${GEM_HOME:+$GEM_HOME/bin:}$RUBY_ROOT/bin:$PATH"
+    fi
+  else
+    # 3) Sürüm yöneticisi yok: başka bir Ruby'den miras kalmış GEM_*
+    #    değişkenleri temizle, PATH'teki ilk Ruby kendi gem'lerini kullansın.
+    unset GEM_HOME GEM_PATH GEM_ROOT
+  fi
+}
+ruby_ortami_hazirla
+echo "💎 Ruby: $(ruby -v 2>/dev/null | cut -d' ' -f1-2 || echo bulunamadı) · bundle: $(command -v bundle || echo bulunamadı)"
+
+if ! command -v bundle >/dev/null 2>&1; then
+  echo "❌ 'bundle' bulunamadı. Ruby kurulumunu kontrol edin (brew install chruby ruby-install)."
   exit 1
 fi
+
+# Gem'ler eksikse ya da Gemfile.lock hiç yoksa (yeni proje) kur. Bu, ilk
+# yayında "bundle install'ı unuttum" hatasını kökten kaldırır.
+if ! bundle check >/dev/null 2>&1; then
+  echo "💎 Gem'ler eksik ya da Gemfile.lock yok; 'bundle install' çalıştırılıyor..."
+  if ! bundle install; then
+    echo "❌ bundle install başarısız. Yukarıdaki çıktıya bakın."
+    exit 1
+  fi
+fi
+
+if ! fl_surum=$(bundle exec fastlane --version 2>&1); then
+  echo "❌ 'bundle exec fastlane' çalıştırılamadı. Son satırlar:"
+  echo "$fl_surum" | tail -15 | sed 's/^/   /'
+  echo "   ruby: $(command -v ruby) · bundle: $(command -v bundle) · GEM_HOME=${GEM_HOME:-boş}"
+  echo "   Çare genellikle: bu üçü aynı Ruby'den olmalı. Terminalde 'chruby' ile"
+  echo "   Ruby seçip 'bundle install' çalıştırın, sonra yeniden deneyin."
+  exit 1
+fi
+echo "💎 $(echo "$fl_surum" | grep -o 'fastlane [0-9][0-9.]*' | tail -1 || echo fastlane hazır)"
 
 # Fastlane'in dry-run modunu görmesi için dışa aktar
 export DEPLOY_DRY_RUN="$DRY_RUN"
