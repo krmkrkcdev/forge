@@ -13,12 +13,23 @@ dart pub global activate --source path .
 
 Ardından `forge` komutu her yerde çalışır. (`~/.pub-cache/bin` PATH'te olmalı.)
 
-> **Kaynağı her değiştirdiğinizde bu komutu tekrar çalıştırın.** Kurulum bir
-> anlık görüntüdür; kaynağı düzenlemek onu güncellemez. `deploy.sh` yayın
-> öncesi PATH'teki forge'u çağırdığı için, yeni eklediğiniz bir denetim eski
-> kurulumda hiç çalışmaz ve çıktı yanıltıcı biçimde "temiz" görünür — gerçekten
-> başımıza geldi. `forge doctor` artık bunu fark edip uyarıyor, panelde de
-> **🔁 forge'u yeniden kur** düğmesi var.
+> **Kaynağı her değiştirdiğinizde yeniden kurun — ama `activate` tek başına
+> yetmez.** Dart 3.x, yoldan kurulan paketin anlık görüntüsünü **bu deponun
+> içinde** (`.dart_tool/pub/bin/forge/`) tutar; PUB_CACHE'te yalnızca ona
+> işaret eden bir sarmalayıcı vardır. `dart pub global activate` sarmalayıcıyı
+> ve `pubspec.lock`'u tazeler, anlık görüntüyü **yerinde bırakır** — yani
+> "Activated forge" yazar ve komut yine eski kodu çalıştırır. Doğrusu:
+>
+> ```bash
+> rm -rf .dart_tool/pub/bin/forge
+> dart pub global activate --source path .
+> ```
+>
+> Bu gerçekten başımıza geldi: bir ay boyunca eski kod çalıştı, `deploy.sh`'ın
+> yayın öncesi çağırdığı `forge doctor` yeni eklenen engelleri hiç denetlemedi
+> ve çıktı yanıltıcı biçimde "temiz" göründü. `forge doctor` artık bunu fark
+> edip uyarıyor; panelde **🔁 forge'u yeniden kur** düğmesi ikisini birden
+> yapar.
 
 ## Komutlar
 

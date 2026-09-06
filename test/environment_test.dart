@@ -58,32 +58,68 @@ void main() {
   });
 
   group('installedForgeSnapshotDate', () {
-    test('önbellek boşsa null döner', () {
-      expect(installedForgeSnapshotDate(pubCache: root.path), isNull);
+    test('anlık görüntü yoksa null döner — sarmalayıcı her çağrıda derler',
+        () {
+      expect(
+        installedForgeSnapshotDate(sourceDir: root.path, pubCache: root.path),
+        isNull,
+      );
     });
 
-    test('en yeni anlık görüntünün tarihini döner', () {
-      // SDK yükseltmesinden sonra eski snapshot dosyası yerinde kalabilir;
-      // ölçüt en yenisidir.
-      final dir = Directory(p.join(root.path, 'global_packages', 'forge', 'bin'))
+    test('anlık görüntüyü PROJENİN .dart_tool dizininde bulur', () {
+      // Dart 3.x yoldan kurulan paketi buraya derler. PUB_CACHE'te yalnızca
+      // sarmalayıcı vardır ve o, activate ile tazelendiği için kurulumun
+      // güncelliğini ÖLÇMEZ — bir ay boyunca eski kodun çalışmasının sebebi
+      // tam olarak buydu.
+      final dir = Directory(p.join(root.path, '.dart_tool', 'pub', 'bin', 'forge'))
+        ..createSync(recursive: true);
+      File(p.join(dir.path, 'forge.dart-3.10.4.snapshot'))
+        ..writeAsStringSync('x')
+        ..setLastModifiedSync(DateTime(2026, 8, 5));
+
+      // pubCache bilinçli olarak boş bir dizin: testin makinedeki gerçek
+      // ~/.pub-cache içeriğine bağlı olmaması gerekir.
+      expect(
+        installedForgeSnapshotDate(
+          sourceDir: root.path,
+          pubCache: p.join(root.path, 'bos-cache'),
+        ),
+        DateTime(2026, 8, 5),
+      );
+    });
+
+    test('eski SDK\'ların PUB_CACHE yerleşimini de tanır', () {
+      final cache = Directory(p.join(root.path, 'cache'))..createSync();
+      final dir = Directory(p.join(cache.path, 'global_packages', 'forge', 'bin'))
         ..createSync(recursive: true);
       File(p.join(dir.path, 'forge.dart-3.9.0.snapshot'))
-        ..writeAsStringSync('eski')
+        ..writeAsStringSync('x')
         ..setLastModifiedSync(DateTime(2026, 1, 1));
-      File(p.join(dir.path, 'forge.dart-3.10.4.snapshot'))
-        ..writeAsStringSync('yeni')
-        ..setLastModifiedSync(DateTime(2026, 8, 1));
 
-      expect(installedForgeSnapshotDate(pubCache: root.path), DateTime(2026, 8, 1));
+      expect(
+        installedForgeSnapshotDate(sourceDir: root.path, pubCache: cache.path),
+        DateTime(2026, 1, 1),
+      );
     });
 
-    test('anlık görüntü yoksa sarmalayıcıya düşer', () {
-      final bin = Directory(p.join(root.path, 'bin'))..createSync(recursive: true);
-      File(p.join(bin.path, 'forge'))
-        ..writeAsStringSync('#!/bin/sh\n')
-        ..setLastModifiedSync(DateTime(2026, 7, 4));
+    test('iki yerleşim de varsa en yenisini alır', () {
+      final cache = Directory(p.join(root.path, 'cache'))..createSync();
+      final old = Directory(p.join(cache.path, 'global_packages', 'forge', 'bin'))
+        ..createSync(recursive: true);
+      File(p.join(old.path, 'forge.dart-3.9.0.snapshot'))
+        ..writeAsStringSync('x')
+        ..setLastModifiedSync(DateTime(2026, 1, 1));
 
-      expect(installedForgeSnapshotDate(pubCache: root.path), DateTime(2026, 7, 4));
+      final current = Directory(p.join(root.path, '.dart_tool', 'pub', 'bin', 'forge'))
+        ..createSync(recursive: true);
+      File(p.join(current.path, 'forge.dart-3.10.4.snapshot'))
+        ..writeAsStringSync('x')
+        ..setLastModifiedSync(DateTime(2026, 8, 5));
+
+      expect(
+        installedForgeSnapshotDate(sourceDir: root.path, pubCache: cache.path),
+        DateTime(2026, 8, 5),
+      );
     });
   });
 }

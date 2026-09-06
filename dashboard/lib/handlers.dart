@@ -500,6 +500,13 @@ class Handlers {
   /// öncesi PATH'teki forge'u çağırdığı için, yeni eklenen denetimler eski
   /// kurulumda HİÇ çalışmaz ve çıktı yanıltıcı biçimde "temiz" görünür.
   Response _forgeReinstall() {
+    // Anlık görüntü PUB_CACHE'te değil, BU DEPONUN .dart_tool dizinindedir
+    // (Dart 3.x, yoldan kurulan paketler). `activate` sarmalayıcıyı tazeler
+    // ama bu dosyaya dokunmaz: silinmezse kurulum "başarılı" der ve komut
+    // yine eski kodu çalıştırır. Bir ay boyunca öyle oldu.
+    final snapshots = Directory(p.join(forgeRoot, '.dart_tool', 'pub', 'bin', 'forge'));
+    if (snapshots.existsSync()) snapshots.deleteSync(recursive: true);
+
     return _spawn(
       'dart',
       ['pub', 'global', 'activate', '--source', 'path', forgeRoot],

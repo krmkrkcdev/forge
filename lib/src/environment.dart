@@ -133,32 +133,45 @@ String? _globallyActivatedForgePath() {
   return match?.group(1);
 }
 
-/// Kurulu anlık görüntünün (snapshot) tarihi.
+/// Kurulu anlık görüntünün (snapshot) tarihi; yoksa `null`.
 ///
-/// `dart pub global activate` kaynağı derleyip PUB_CACHE altına bir snapshot
-/// yazar. Sonradan kaynağı düzenlemek bu dosyaya DOKUNMAZ — sorunun kökeni
-/// budur.
-DateTime? installedForgeSnapshotDate({String? pubCache}) {
+/// **Anlık görüntü PUB_CACHE'te değil, PROJENİN içinde durur.** Dart 3.x,
+/// yoldan kurulan paketi `<kaynak>/.dart_tool/pub/bin/<paket>/` altına
+/// derler; PUB_CACHE'te yalnızca ona işaret eden bir kabuk sarmalayıcısı ve
+/// `pubspec.lock` bulunur. Bu ayrım can yakıcıdır: `dart pub global activate`
+/// sarmalayıcıyı ve kilidi tazeler ama anlık görüntüyü YERİNDE BIRAKIR, yani
+/// kurulum "başarılı" der ve komut aylar öncesinin kodunu çalıştırmaya devam
+/// eder. Gerçekten yaşandı — bir ay boyunca ağustos kodu çalıştı.
+///
+/// Hiç anlık görüntü yoksa `null` döner ve bu iyi haberdir: sarmalayıcı o
+/// durumda `dart pub global run` ile her çağrıda derler, dolayısıyla kurulum
+/// eski kalamaz.
+DateTime? installedForgeSnapshotDate({
+  required String sourceDir,
+  String? pubCache,
+}) {
   final home = io.Platform.environment['HOME'];
   final cache = pubCache ??
       io.Platform.environment['PUB_CACHE'] ??
       (home == null ? null : p.join(home, '.pub-cache'));
-  if (cache == null) return null;
 
-  final binDir = io.Directory(p.join(cache, 'global_packages', 'forge', 'bin'));
-  if (binDir.existsSync()) {
-    DateTime? newest;
-    for (final entity in binDir.listSync()) {
+  final candidates = <io.Directory>[
+    io.Directory(p.join(sourceDir, '.dart_tool', 'pub', 'bin', 'forge')),
+    // Eski SDK'lar PUB_CACHE altına yazıyordu; makinede kalmış olabilir.
+    if (cache != null)
+      io.Directory(p.join(cache, 'global_packages', 'forge', 'bin')),
+  ];
+
+  DateTime? newest;
+  for (final dir in candidates) {
+    if (!dir.existsSync()) continue;
+    for (final entity in dir.listSync()) {
       if (entity is! io.File || !entity.path.endsWith('.snapshot')) continue;
       final modified = entity.statSync().modified;
       if (newest == null || modified.isAfter(newest)) newest = modified;
     }
-    if (newest != null) return newest;
   }
-
-  // Snapshot bulunamadıysa kurulum sırasında yazılan sarmalayıcıya bakılır.
-  final wrapper = io.File(p.join(cache, 'bin', 'forge'));
-  return wrapper.existsSync() ? wrapper.statSync().modified : null;
+  return newest;
 }
 
 /// Kaynak dizindeki en yeni değişiklik tarihi.
@@ -212,8 +225,8 @@ Finding? _staleGlobalInstall() {
   final source = _globallyActivatedForgePath();
   if (source == null) return null; // yoldan kurulmamış: kıyaslanacak kaynak yok
 
-  final installed = installedForgeSnapshotDate();
-  if (installed == null) return null;
+  final installed = installedForgeSnapshotDate(sourceDir: source);
+  if (installed == null) return null; // anlık görüntü yok: her çağrıda derlenir
 
   final changed = newestForgeSourceChange(source);
   if (changed == null || !changed.isAfter(installed)) return null;
@@ -224,13 +237,16 @@ Finding? _staleGlobalInstall() {
     platform: Platform.both,
     title: 'PATH\'teki forge kaynaktan eski '
         '(kurulum ${_ago(installed)}, kaynak ${_ago(changed)} değişti)',
-    why: 'Kurulum sırasında derlenen anlık görüntü kullanılıyor; kaynağı '
-        'düzenlemek onu güncellemez. deploy.sh yayın öncesi PATH\'teki '
-        'forge\'u çağırdığı için yeni eklenen denetimler HİÇ çalışmaz ve '
-        'çıktı yanıltıcı biçimde "temiz" görünür. Gerçekten yaşandı: yeni '
-        'bir engel kuralı eklendi, denetim onu görmedi, sürüm o hatayla '
-        'mağazaya gitti.',
-    fix: 'Kaynak dizinde bir kez çalıştırın:\n'
+    why: 'Kurulum sırasında derlenen anlık görüntü çalışıyor; kaynağı '
+        'düzenlemek onu güncellemez. Daha kötüsü: `dart pub global activate` '
+        'sarmalayıcıyı tazeler ama anlık görüntüyü YERİNDE BIRAKIR, yani '
+        'kurulum "başarılı" der ve komut yine eski kodu çalıştırır. '
+        'deploy.sh yayın öncesi PATH\'teki forge\'u çağırdığı için yeni '
+        'eklenen denetimler HİÇ çalışmaz ve çıktı yanıltıcı biçimde "temiz" '
+        'görünür. Gerçekten yaşandı: bir ay boyunca eski kod çalıştı, yeni '
+        'eklenen engel kuralları hiç denetlenmedi.',
+    fix: 'Anlık görüntüyü SİLİP yeniden kurun — yalnızca activate yetmez:\n'
+        '  rm -rf $source/.dart_tool/pub/bin/forge\n'
         '  dart pub global activate --source path $source',
   );
 }
