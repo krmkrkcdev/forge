@@ -48,6 +48,10 @@ class Handlers {
           return _fix(request);
         case 'api/update':
           return _update(request);
+        case 'api/analyze':
+          return _analyze(request);
+        case 'api/forge-reinstall':
+          return _forgeReinstall();
         case 'api/new':
           return _new(request);
         case 'api/deploy':
@@ -461,6 +465,46 @@ class Handlers {
       'pub',
       upgrade ? 'upgrade' : 'get',
     ], workingDir: path);
+  }
+
+  // ------------------------------------------------------------- analiz
+
+  /// Bağımlılıkları çözer ve `flutter analyze` çalıştırır.
+  ///
+  /// forge doctor'ın bakmadığı yere bakar: kodun kendisine. Derleme hatasını
+  /// yayın akışının ortasında öğrenmek dakikalara mal olur; burada saniyeler
+  /// sürer.
+  Response _analyze(Request request) {
+    final path = request.url.queryParameters['path'];
+    if (path == null || path.isEmpty) {
+      return _sseError('path parametresi gerekli');
+    }
+    if (!File(p.join(path, 'pubspec.yaml')).existsSync()) {
+      return _sseError('pubspec.yaml bulunamadı: $path');
+    }
+    // forge analyze yerine doğrudan flutter çağrılıyor: panel forge'u zaten
+    // kaynaktan çalıştırıyor, araya bir Dart süreci daha koymanın faydası yok
+    // ve adımlar ayrı ayrı etiketlendiğinde hangisinin patladığı görünür.
+    return _run([
+      _Step('flutter', ['pub', 'get'], path, label: 'Bağımlılıklar'),
+      _Step('flutter', ['analyze'], path, label: 'Statik analiz'),
+    ]);
+  }
+
+  // ------------------------------------------------------ forge kurulumu
+
+  /// PATH'teki forge'u bu depodaki kaynaktan yeniden kurar.
+  ///
+  /// `dart pub global activate` kaynağı derleyip anlık görüntü olarak saklar;
+  /// sonradan kaynağı düzenlemek o görüntüyü güncellemez. deploy.sh yayın
+  /// öncesi PATH'teki forge'u çağırdığı için, yeni eklenen denetimler eski
+  /// kurulumda HİÇ çalışmaz ve çıktı yanıltıcı biçimde "temiz" görünür.
+  Response _forgeReinstall() {
+    return _spawn(
+      'dart',
+      ['pub', 'global', 'activate', '--source', 'path', forgeRoot],
+      workingDir: forgeRoot,
+    );
   }
 
   // --------------------------------------------------------------- new

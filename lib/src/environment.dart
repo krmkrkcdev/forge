@@ -1,5 +1,7 @@
 import 'dart:io' as io;
 
+import 'package:path/path.dart' as p;
+
 import 'finding.dart';
 
 /// Makine ortamı denetimleri.
@@ -13,6 +15,7 @@ const List<EnvCheck> allEnvironmentChecks = [
   _iosSdkVersion,
   _distributionCertificate,
   _utf8Locale,
+  _staleGlobalInstall,
 ];
 
 /// App Store Connect'in kabul ettiği en düşük iOS SDK ana sürümü.
@@ -116,4 +119,126 @@ Finding? _utf8Locale() {
         '  export LANG=en_US.UTF-8\n'
         '  export LC_ALL=en_US.UTF-8',
   );
+}
+
+// ------------------------------------------------- kurulu forge güncel mi
+
+/// `dart pub global list` çıktısından, yoldan kurulmuş forge'un kaynak
+/// dizinini okur. Yoldan kurulmamışsa (hosted/git) `null`.
+String? _globallyActivatedForgePath() {
+  final output = _run('dart', ['pub', 'global', 'list']);
+  if (output == null) return null;
+  final match = RegExp(r'^forge \S+ at path "(.+)"$', multiLine: true)
+      .firstMatch(output);
+  return match?.group(1);
+}
+
+/// Kurulu anlık görüntünün (snapshot) tarihi.
+///
+/// `dart pub global activate` kaynağı derleyip PUB_CACHE altına bir snapshot
+/// yazar. Sonradan kaynağı düzenlemek bu dosyaya DOKUNMAZ — sorunun kökeni
+/// budur.
+DateTime? installedForgeSnapshotDate({String? pubCache}) {
+  final home = io.Platform.environment['HOME'];
+  final cache = pubCache ??
+      io.Platform.environment['PUB_CACHE'] ??
+      (home == null ? null : p.join(home, '.pub-cache'));
+  if (cache == null) return null;
+
+  final binDir = io.Directory(p.join(cache, 'global_packages', 'forge', 'bin'));
+  if (binDir.existsSync()) {
+    DateTime? newest;
+    for (final entity in binDir.listSync()) {
+      if (entity is! io.File || !entity.path.endsWith('.snapshot')) continue;
+      final modified = entity.statSync().modified;
+      if (newest == null || modified.isAfter(newest)) newest = modified;
+    }
+    if (newest != null) return newest;
+  }
+
+  // Snapshot bulunamadıysa kurulum sırasında yazılan sarmalayıcıya bakılır.
+  final wrapper = io.File(p.join(cache, 'bin', 'forge'));
+  return wrapper.existsSync() ? wrapper.statSync().modified : null;
+}
+
+/// Kaynak dizindeki en yeni değişiklik tarihi.
+///
+/// Yalnızca kurulumu etkileyen dosyalara bakar: `lib/`, `bin/` ve
+/// `pubspec.yaml`. Şablonlar `lib/src/templates/bundle.dart` içine gömüldüğü
+/// için assets/ ayrıca taranmaz — gömme adımı atlanmışsa onu `dart test`
+/// yakalar.
+DateTime? newestForgeSourceChange(String sourceDir) {
+  DateTime? newest;
+
+  void consider(io.FileSystemEntity entity) {
+    if (entity is! io.File) return;
+    if (!entity.path.endsWith('.dart') &&
+        p.basename(entity.path) != 'pubspec.yaml') {
+      return;
+    }
+    // DİKKAT: statSync() var olmayan dosya için istisna ATMAZ; type'ı
+    // notFound, modified'ı 1970 olan bir kayıt döndürür. Bu kontrol olmadan
+    // "dosya yok" ile "dosya çok eski" aynı şeye dönüşür ve işlev, kaynağı
+    // boş dizinde bile bir tarih uydurur.
+    final stat = entity.statSync();
+    if (stat.type == io.FileSystemEntityType.notFound) return;
+    final modified = stat.modified;
+    if (newest == null || modified.isAfter(newest!)) newest = modified;
+  }
+
+  for (final relative in ['lib', 'bin']) {
+    final dir = io.Directory(p.join(sourceDir, relative));
+    if (!dir.existsSync()) continue;
+    for (final entity in dir.listSync(recursive: true)) {
+      consider(entity);
+    }
+  }
+  consider(io.File(p.join(sourceDir, 'pubspec.yaml')));
+
+  return newest;
+}
+
+/// Kurulu forge, kaynağın gerisinde mi?
+///
+/// Gerçek bir olaydan doğdu: `checks.dart` içine yeni bir engel eklendi,
+/// `deploy.sh` yayın öncesi `forge doctor` çağırdı — ama PATH'teki forge eski
+/// anlık görüntüydü ve yeni kural hiç çalışmadı. Denetim sessizce "temiz"
+/// dedi ve sürüm o hatayla mağazaya gitti.
+///
+/// Bu denetim yalnızca forge KAYNAKTAN çalışırken (panel, `dart run`) işe
+/// yarar; eski global kopya bu kuralı zaten içermez. Panel forge'u hep
+/// kaynaktan çalıştırdığı için uyarıyı orada görürsünüz.
+Finding? _staleGlobalInstall() {
+  final source = _globallyActivatedForgePath();
+  if (source == null) return null; // yoldan kurulmamış: kıyaslanacak kaynak yok
+
+  final installed = installedForgeSnapshotDate();
+  if (installed == null) return null;
+
+  final changed = newestForgeSourceChange(source);
+  if (changed == null || !changed.isAfter(installed)) return null;
+
+  return Finding(
+    id: 'forge-install-stale',
+    severity: Severity.warning,
+    platform: Platform.both,
+    title: 'PATH\'teki forge kaynaktan eski '
+        '(kurulum ${_ago(installed)}, kaynak ${_ago(changed)} değişti)',
+    why: 'Kurulum sırasında derlenen anlık görüntü kullanılıyor; kaynağı '
+        'düzenlemek onu güncellemez. deploy.sh yayın öncesi PATH\'teki '
+        'forge\'u çağırdığı için yeni eklenen denetimler HİÇ çalışmaz ve '
+        'çıktı yanıltıcı biçimde "temiz" görünür. Gerçekten yaşandı: yeni '
+        'bir engel kuralı eklendi, denetim onu görmedi, sürüm o hatayla '
+        'mağazaya gitti.',
+    fix: 'Kaynak dizinde bir kez çalıştırın:\n'
+        '  dart pub global activate --source path $source',
+  );
+}
+
+/// "3 gün önce" gibi kısa bir ifade.
+String _ago(DateTime time) {
+  final diff = DateTime.now().difference(time);
+  if (diff.inMinutes < 60) return '${diff.inMinutes} dk önce';
+  if (diff.inHours < 24) return '${diff.inHours} saat önce';
+  return '${diff.inDays} gün önce';
 }

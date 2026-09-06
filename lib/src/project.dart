@@ -73,6 +73,27 @@ class FlutterProject {
   /// Uygulama reklam gösteriyor mu?
   bool get usesAds => (pubspec ?? '').contains('google_mobile_ads:');
 
+  /// İzleme izni (ATT) paketi bağımlılıklarda mı?
+  bool get usesAtt => (pubspec ?? '').contains('app_tracking_transparency:');
+
+  /// Kod, Apple'ın izin diyaloğunu gerçekten açıyor mu?
+  ///
+  /// Paketin pubspec'te olması yetmez: çağrı yapılmadığı hâlde UMP formu
+  /// gösteren uygulama App Store incelemesinde reddedilir.
+  bool get requestsTrackingAuthorization =>
+      libContains('requestTrackingAuthorization');
+
+  /// Gizlilik manifestindeki `NSPrivacyTracking` değeri; anahtar ya da
+  /// dosya yoksa `null`.
+  bool? get iosPrivacyManifestTracking {
+    final content = read('ios/Runner/PrivacyInfo.xcprivacy');
+    if (content == null) return null;
+    final match = RegExp(r'<key>NSPrivacyTracking</key>\s*<(true|false)\s*/>')
+        .firstMatch(content);
+    if (match == null) return null;
+    return match.group(1) == 'true';
+  }
+
   String get pubspecPath => 'pubspec.yaml';
   String? get pubspec => read(pubspecPath);
 

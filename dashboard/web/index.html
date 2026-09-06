@@ -81,6 +81,10 @@
               <button data-act="fix-apply" class="warn">🩹 Düzeltmeleri uygula</button>
               <small class="hint">Tek doğru cevabı olan düzeltmeleri <strong>diske yazar</strong>. İmzalama/kimlik gibi karar gerektiren şeylere dokunmaz.</small>
             </div>
+            <div class="act-item">
+              <button data-act="forge-reinstall" class="secondary">🔁 forge'u yeniden kur</button>
+              <small class="hint">PATH'teki <code>forge</code>'u bu depodaki kaynaktan derler. Kurulum <strong>anlık görüntüdür</strong>: kaynağı düzenlemek onu güncellemez, o yüzden <code>deploy.sh</code>'ın çağırdığı denetim eski kalır ve yeni kurallar hiç çalışmaz. Panel bunu fark ederse doctor çıktısında uyarır.</small>
+            </div>
           </div>
 
           <div class="action-group">
@@ -89,6 +93,10 @@
             <div class="act-item">
               <button data-act="update" class="secondary">🔄 Güncelle (pub get)</button>
               <small class="hint"><code>pubspec.yaml</code>'da yazılı paketleri indirir/çözer. <strong>Sürümleri değiştirmez</strong> — eksikleri kurar. Yeni paket ekleyince ya da projeyi ilk açınca.</small>
+            </div>
+            <div class="act-item">
+              <button data-act="analyze" class="secondary">🧪 Analiz et</button>
+              <small class="hint"><code>pub get</code> + <code>flutter analyze</code>. Kodun kendisine bakar (doctor yalnızca mağaza hazırlığına bakar). Derleme hatasını yayın turunun <strong>ortasında</strong> değil, saniyeler içinde öğrenirsin.</small>
             </div>
             <div class="act-item">
               <button data-act="upgrade" class="secondary">⬆️ Sürümleri yükselt</button>

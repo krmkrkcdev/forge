@@ -72,7 +72,13 @@ class NewCommand extends Command<int> {
   /// Reklam katmanı google_mobile_ads'e, arayüz metinleri intl'e bağlı.
   /// shared_preferences neredeyse her uygulamada gerekiyor ve gizlilik
   /// manifestindeki UserDefaults gerekçesi onun için yazıldı.
+  ///
+  /// app_tracking_transparency reklamın ayrılmaz parçasıdır, isteğe bağlı
+  /// bir ek değil: iOS'ta izleme iznini Apple'ın diyaloğuyla istemeyip
+  /// yalnızca Google'ın UMP formunu göstermek 5.1.2(i) reddi demektir
+  /// (docs/REKLAM.md). Reklam göstermeyecekseniz üçünü birden çıkarın.
   static const _dependencies = [
+    'app_tracking_transparency',
     'google_mobile_ads',
     'intl',
     'shared_preferences',

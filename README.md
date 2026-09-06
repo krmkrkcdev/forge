@@ -13,6 +13,13 @@ dart pub global activate --source path .
 
 Ardından `forge` komutu her yerde çalışır. (`~/.pub-cache/bin` PATH'te olmalı.)
 
+> **Kaynağı her değiştirdiğinizde bu komutu tekrar çalıştırın.** Kurulum bir
+> anlık görüntüdür; kaynağı düzenlemek onu güncellemez. `deploy.sh` yayın
+> öncesi PATH'teki forge'u çağırdığı için, yeni eklediğiniz bir denetim eski
+> kurulumda hiç çalışmaz ve çıktı yanıltıcı biçimde "temiz" görünür — gerçekten
+> başımıza geldi. `forge doctor` artık bunu fark edip uyarıyor, panelde de
+> **🔁 forge'u yeniden kur** düğmesi var.
+
 ## Komutlar
 
 ### `forge new`
@@ -86,6 +93,28 @@ Her bulgu üç şey söyler: **ne** yanlış, **neden** önemli, **nasıl** düz
 "Neden" kısmı bilinçli olarak vardır — sebebi anlaşılmayan uyarı görmezden
 gelinir.
 
+### `forge analyze`
+
+Bağımlılıkları çözer ve `flutter analyze` çalıştırır.
+
+```bash
+forge analyze                  # bulunduğun dizinden yukarı doğru proje arar
+forge analyze --path app
+forge analyze --no-pub-get     # bağımlılıklar zaten çözülüyse
+```
+
+`forge doctor` mağaza hazırlığına bakar — dosyalar, kimlikler, beyanlar;
+kodun kendisine bakmaz. Analiz hatası olan proje `deploy.sh` içinde de
+yakalanır ama **dakikalar sonra**: temizlik ve derleme harcandıktan, tam
+imzalama adımının öncesinde. Bu komut aynı bilgiyi saniyeler içinde verir.
+
+`pub get` varsayılan olarak önce çalışır: bağımlılıklar çözülmeden yapılan
+analiz her import için "target of URI doesn't exist" üretir — yeni paket
+ekledikten sonra en sık düşülen tuzak budur.
+
+Üretim yayınında (`./deploy.sh <platform> release`) analiz zorunludur;
+beta'da çalıştırılmaz, hızlı tur atmak meşrudur.
+
 ### `forge fix`
 
 Tek doğru cevabı olan düzeltmeleri uygular.
@@ -113,6 +142,9 @@ seçmek gibi **kararlar size aittir**; araç bunları sizin yerinize vermez.
 | AdMob uygulama kimliği eksik | Engel | Reklam SDK'sı açılışta uygulamayı çökertir |
 | iPad yön beyanı tutarsızlığı | Engel | Yükleme 90474 hatasıyla reddedilir |
 | `NSUserTrackingUsageDescription` | Engel | ATT izni isteyen uygulama çalışma anında çöker |
+| UMP formu var, ATT izni istenmiyor | Engel | Apple UMP formunu "özel izleme ekranı" sayar: 5.1.2(i) reddi |
+| ATT paketi eklenmiş, çağrı yapılmamış | Engel | Paketi eklemek diyaloğu göstermez; aynı redde geri dönülür |
+| `NSPrivacyTracking` ile kodun çelişmesi | Engel | Yanlış beyan; iki yönü de reddedilir |
 | `ITSAppUsesNonExemptEncryption` | Uyarı | Her yüklemede elle soru |
 | `PrivacyInfo.xcprivacy` varlığı | Uyarı | Apple zorunlu tutuyor |
 | Paket kimliği tutarlılığı | Uyarı | Derin bağlantı ve analitikte karışıklık |
@@ -141,6 +173,7 @@ unutulacağı yerde olurdu.
 |---|---|---|
 | iOS SDK mağaza eşiğinin üstünde mi | Engel | Eski SDK ile üretilen paket reddedilir |
 | LANG/LC_ALL UTF-8 mi | Uyarı | CocoaPods ve fastlane sebebi anlaşılmaz hatayla çöker |
+| PATH'teki forge kaynaktan eski mi | Uyarı | Yeni eklenen denetim hiç çalışmaz, çıktı yanıltıcı biçimde "temiz" görünür |
 
 Apple, kabul ettiği en düşük SDK sürümünü periyodik olarak yükseltir; eşik
 `lib/src/environment.dart` içinde `minimumIosSdkMajor` sabitidir.

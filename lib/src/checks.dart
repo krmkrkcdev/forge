@@ -32,7 +32,10 @@ const List<Check> allChecks = [
   _admobConsentMissing,
   _iosSkAdNetwork,
   _iosTrackingUsageDescription,
+  _iosAttNeverRequested,
+  _iosAttPackageUnused,
   _privacyManifestIgnoresAds,
+  _privacyManifestTrackingMismatch,
 ];
 
 List<Finding> runChecks(FlutterProject project) {
@@ -467,6 +470,67 @@ Finding? _iosTrackingUsageDescription(FlutterProject p) {
   );
 }
 
+/// Reklam var, UMP onay formu gösteriliyor, ama Apple'ın izin diyaloğu
+/// hiç açılmıyor.
+///
+/// Bu kural gerçek bir redden doğdu (Hazem The Frog 1.0, 2026-08-12):
+/// Apple, Google'ın UMP formunu "izleme izni isteyen özel ekran" sayıp
+/// **5.1.2(i)** ile reddetti. Kodda görünür bir hata yoktu; eksik olan tek
+/// şey Apple'ın kendi diyaloğuydu.
+Finding? _iosAttNeverRequested(FlutterProject p) {
+  if (!p.usesAds || !p.hasIos) return null;
+  // Onay formunu hiç göstermeyen proje ayrı bir kuralın konusu.
+  if (!p.libContains('ConsentInformation')) return null;
+  // Paket zaten eklenmişse sorun "çağrı yok" demektir; onu tek ve daha
+  // net bir bulguyla söylemek için sahayı _iosAttPackageUnused'a bırakıyoruz.
+  if (p.usesAtt) return null;
+
+  return const Finding(
+    id: 'ios-att-never-requested',
+    severity: Severity.blocker,
+    platform: Platform.ios,
+    title: 'UMP onay formu gösteriliyor ama ATT izni hiç istenmiyor',
+    why: 'iOS\'ta reklam kimliğine (IDFA) erişmek için Apple\'ın KENDİ izin '
+        'diyaloğu şarttır; Google\'ın UMP formu onun yerine geçmez. Yalnızca '
+        'UMP formunu gösteren uygulama, Apple\'ın gözünde "izleme izni '
+        'isteyen özel ekran" gösteriyordur ve 5.1.2(i) ile reddedilir — '
+        'gerçekten yaşandı. AdMob konsolunda ATT mesajı yayındaysa kullanıcı '
+        'yalnızca Google\'ın ekranını görür, gerçek izin hiç sorulmaz.',
+    fix: 'app_tracking_transparency paketini ekleyin, Info.plist\'e '
+        'NSUserTrackingUsageDescription yazın ve AdService.init() içinde '
+        'ŞU SIRAYLA ilerleyin:\n'
+        '  UMP onayı → AppTrackingTransparency.requestTrackingAuthorization()'
+        ' → MobileAds.initialize()\n'
+        'İzin istemeyecekseniz AdMob konsolundaki ATT mesajını yayından '
+        'kaldırın ve NSPrivacyTracking değerini false bırakın; arada kalmak '
+        'reddedilir. Ayrıntı: docs/REKLAM.md',
+  );
+}
+
+/// Paket bağımlılıklarda duruyor ama çağrı hiç yapılmıyor.
+///
+/// Paketi eklemek uygulamaya izin diyaloğu KAZANDIRMAZ. Bu ayrımı görmeden
+/// "ATT eklendi" sanıp yeniden gönderilen sürüm aynı gerekçeyle geri döner.
+Finding? _iosAttPackageUnused(FlutterProject p) {
+  if (!p.hasIos || !p.usesAtt) return null;
+  if (p.requestsTrackingAuthorization) return null;
+
+  return const Finding(
+    id: 'ios-att-package-unused',
+    severity: Severity.blocker,
+    platform: Platform.ios,
+    title: 'app_tracking_transparency eklenmiş ama izin hiç istenmiyor',
+    why: 'Paketin pubspec\'te olması izin diyaloğunu göstermez. Uygulama '
+        'izin istemeden reklam kimliğini okuyamaz; App Store incelemesi de '
+        '"izin istenmiyor" diyerek reddeder.',
+    fix: 'Reklam SDK\'sı başlatılmadan ÖNCE çağırın:\n'
+        '  await AppTrackingTransparency.requestTrackingAuthorization();\n'
+        'Diyalog yalnızca uygulama ETKİN (resumed) durumdayken çıkar: '
+        'açılışta, ilk kare çizilmeden istenen izin diyalog hiç görünmeden '
+        'geri döner ve bir daha sorulamaz.',
+  );
+}
+
 Finding? _privacyManifestIgnoresAds(FlutterProject p) {
   if (!p.usesAds || !p.hasIos) return null;
   final manifest = p.read('ios/Runner/PrivacyInfo.xcprivacy');
@@ -491,6 +555,54 @@ Finding? _privacyManifestIgnoresAds(FlutterProject p) {
         'ThirdPartyAdvertising) ve App Store Connect gizlilik anketini '
         'AYNI biçimde doldurun: Tanımlayıcılar → Cihaz Kimliği, '
         'Kullanım Verisi → Reklam Verisi.',
+  );
+}
+
+/// Gizlilik manifesti ile kodun anlattığı hikâye çelişiyor.
+///
+/// App Store Connect gizlilik anketi de aynı hikâyeyi anlatmak zorunda.
+/// Üçünden biri diğerlerini tutmadığında red gerekçesi "yanlış beyan"dır ve
+/// düzeltmesi yeni bir build + yeni bir inceleme turu demektir.
+Finding? _privacyManifestTrackingMismatch(FlutterProject p) {
+  if (!p.hasIos) return null;
+  final declared = p.iosPrivacyManifestTracking;
+  if (declared == null) return null; // manifest ya da anahtar yok: ayrı kural
+
+  // Ölçüt kodun ne YAPTIĞIDIR, pubspec'te ne yazdığı değil: paketin eksik
+  // olması ayrı bir kuralın konusu ve orada zaten söyleniyor.
+  final requests = p.requestsTrackingAuthorization;
+  if (declared == requests) return null;
+
+  if (requests) {
+    return const Finding(
+      id: 'privacy-manifest-tracking-false',
+      severity: Severity.blocker,
+      platform: Platform.ios,
+      title: 'Kod izleme izni istiyor ama manifest NSPrivacyTracking=false '
+          'diyor',
+      why: 'Uygulama izin isterken "izleme yapmıyorum" beyan ediyor. Bu '
+          'çelişki App Store incelemesinde yanlış beyan sayılır ve '
+          'reddedilir.',
+      fix: 'ios/Runner/PrivacyInfo.xcprivacy içinde NSPrivacyTracking '
+          'değerini true yapın, reklam veri türlerinde '
+          'NSPrivacyCollectedDataTypeTracking değerini true olarak '
+          'işaretleyin ve App Store Connect gizlilik anketinde de aynı '
+          'cevabı verin (Cihaz Kimliği + Reklam Verisi → izleme: Evet).',
+    );
+  }
+
+  return const Finding(
+    id: 'privacy-manifest-tracking-true',
+    severity: Severity.blocker,
+    platform: Platform.ios,
+    title: 'Manifest NSPrivacyTracking=true diyor ama izin hiç istenmiyor',
+    why: 'Beyan izleme yapıldığını söylüyor; kod ise Apple\'ın izin '
+        'diyaloğunu hiç açmıyor. İzinsiz izleme, incelemenin en sert '
+        'reddettiği durumdur.',
+    fix: 'Ya izni gerçekten isteyin (app_tracking_transparency + '
+        'requestTrackingAuthorization), ya da NSPrivacyTracking değerini '
+        'false yapıp reklam veri türlerindeki izleme işaretlerini kaldırın. '
+        'Ayrıntı: docs/REKLAM.md',
   );
 }
 

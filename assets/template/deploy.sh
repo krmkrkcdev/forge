@@ -212,6 +212,21 @@ if [ "$SKIP_CHECKS" != true ] && command -v forge >/dev/null 2>&1; then
   fi
 fi
 
+# Statik analiz. forge doctor mağaza hazırlığına bakar, koda bakmaz; analiz
+# hatası olan proje build adımında ama DAKİKALAR sonra, temizlik ve derleme
+# harcandıktan sonra patlar. Burada saniyeler içinde yakalanır.
+#
+# Yalnızca üretim yayınında zorunlu: beta'da hızlı tur atmak meşrudur.
+if [ "$SKIP_CHECKS" != true ] && [ "$LANE" = "release" ]; then
+  echo "🧪 flutter analyze çalıştırılıyor..."
+  if ! flutter analyze; then
+    echo ""
+    echo "❌ Yayın durduruldu: analiz bulguları var."
+    echo "   Denetimi atlamak için: --skip-checks"
+    exit 1
+  fi
+fi
+
 if [ "$DRY_RUN" = true ]; then
   echo "🧪 DRY-RUN: build alınacak, mağazaya yükleme YAPILMAYACAK."
 fi

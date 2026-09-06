@@ -18,6 +18,19 @@
 	<key>UIRequiresFullScreen</key>
 	<true/>
 
+	<!-- İzleme izni (ATT) açıklaması. Apple bu metni KENDİ izin
+	     diyaloğunda gösterir.
+
+	     İki ayrı tuzak: (a) anahtar yokken izin istenirse uygulama
+	     ÇÖKER; (b) izin hiç istenmezken Google'ın UMP formu gösterilirse
+	     Apple bunu "izleme izni isteyen özel ekran" sayar ve 5.1.2(i)
+	     ile reddeder — gerçekten yaşandı. Metni uygulamanıza göre
+	     yeniden yazın; ATT istemeyecekseniz bu anahtarı silin, ATT
+	     çağrısını kaldırın ve AdMob konsolundaki ATT mesajını yayından
+	     kaldırın. Ayrıntı: docs/REKLAM.md -->
+	<key>NSUserTrackingUsageDescription</key>
+	<string>Reklamları ilgi alanlarınıza göre göstermek ve reklam performansını ölçmek için cihazınızın reklam kimliği kullanılır. İzin vermezseniz uygulama aynı şekilde çalışır; reklamlar yalnızca kişiselleştirilmez.</string>
+
 	<!-- AdMob uygulama kimliği (tilde'li olan). Şu anki değer Google'ın
 	     TEST kimliğidir; yayına çıkmadan önce AdMob konsolundaki gerçek
 	     kimlikle değiştirin. Test kimliğiyle yayınlanan uygulama sorunsuz

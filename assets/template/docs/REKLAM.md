@@ -97,10 +97,58 @@ Gerekli olduğu hâlde bu satırın bulunmaması politika ihlalidir.
 - `PrivacyInfo.xcprivacy` → reklam SDK'sı cihaz kimliği ve kullanım verisi
   toplar; bu **beyan edilmelidir** ve App Store Connect gizlilik anketiyle
   tutarlı olmalıdır.
-- İzleme izni (ATT) istemiyorsanız `NSPrivacyTracking` `false` kalır ve
-  reklamlar kişiselleştirilmez. İstemek eCPM'i yükseltir ama
-  `app_tracking_transparency` paketi ve `NSUserTrackingUsageDescription`
-  gerektirir; bu ayrı bir karardır.
+- `NSUserTrackingUsageDescription` → izleme izni açıklaması (aşağıya bakın)
+
+## İzleme izni (ATT) — UMP formu bunun yerine geçmez
+
+Bu bölüm gerçek bir redden doğdu. Yalnızca UMP formu gösteren bir sürüm
+**5.1.2(i)** gerekçesiyle reddedildi:
+
+> The app does not use App Tracking Transparency to request the user's
+> permission before collecting data used to track them. Instead, the app
+> displays a custom prompt that requests the user to allow tracking.
+
+Apple'ın "özel ekran" (custom prompt) dediği şey **Google'ın UMP formuydu.**
+Kod tarafında hata yoktu; eksik olan şuydu: iOS'ta reklam kimliğine (IDFA)
+erişmek için Apple'ın KENDİ diyaloğu gösterilmek zorundadır. İki form
+birbirinin yerine geçmez:
+
+| Form | Kimin | Neyi sorar | Nerede zorunlu |
+|---|---|---|---|
+| UMP onay formu | Google | GDPR/DMA onayı | AB + İngiltere |
+| ATT diyaloğu | Apple | IDFA ile izleme izni | iOS 14+, **her yerde** |
+
+> **Tuzak:** AdMob konsolunda *Privacy & messaging → ATT* mesajı
+> yayınlanmışsa Google, ATT diyaloğundan önce kendi "açıklayıcı" ekranını
+> gösterir ve gerçek izni **uygulamanın** istemesini bekler. Uygulama
+> istemezse kullanıcı yalnızca Google'ın ekranını görür — inceleme bunu
+> "izleme izni isteyen özel ekran" sayar. Red mektubunun tarifi budur.
+
+İzin istenecekse **dört şey birden** doğru olmalıdır; biri eksikken
+diğerleri kusursuz olsa bile inceleme reddedilir:
+
+1. `pubspec.yaml` → `app_tracking_transparency`
+2. `Info.plist` → `NSUserTrackingUsageDescription` (metin yoksa uygulama
+   izin istediği anda **çöker**)
+3. Kod → `AppTrackingTransparency.requestTrackingAuthorization()`
+4. `PrivacyInfo.xcprivacy` → `NSPrivacyTracking = true` **ve** App Store
+   Connect gizlilik anketinde aynı cevap
+
+`AdService.init()` sırası sabittir ve değiştirilmez:
+
+```
+UMP onayı → ATT diyaloğu → MobileAds.initialize()
+```
+
+ATT diyaloğu yalnızca uygulama **etkin (resumed)** durumdayken çıkar.
+Açılışta, ilk kare çizilmeden istenen izin diyalog hiç görünmeden
+`notDetermined` ile döner ve bir daha sorulamaz — hata mesajı da yoktur.
+`AdService` bu yüzden ilk kareyi bekler.
+
+İzin istemek istemiyorsanız alternatif bellidir: `NSPrivacyTracking` `false`
+kalır, reklamlar kişiselleştirilmez **ve** AdMob konsolundaki ATT mesajı
+yayından kaldırılır. Yayında dururken izin istememek, yukarıdaki redle
+sonuçlanan durumun ta kendisidir.
 
 ## Android tarafı
 
@@ -113,6 +161,7 @@ Gerekli olduğu hâlde bu satırın bulunmaması politika ihlalidir.
 | Mağaza | Yapılacak beyan |
 |---|---|
 | App Store Connect | Gizlilik anketi: Tanımlayıcılar → Cihaz Kimliği; Kullanım Verisi → Reklam Verisi |
+| App Store Connect | ATT isteniyorsa bu iki tür için **"izleme amaçlı: Evet"** — `NSPrivacyTracking=true` ile aynı hikâye |
 | Play Console | Uygulama içeriği → Reklamlar: **Evet** |
 | Play Console | Veri güvenliği formu: reklam SDK'sının topladığı veriler |
 

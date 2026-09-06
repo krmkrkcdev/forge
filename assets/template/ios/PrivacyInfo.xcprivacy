@@ -17,11 +17,18 @@
 -->
 <plist version="1.0">
 <dict>
-	<!-- İzleme (ATT) yapılmıyor: reklamlar kişiselleştirilmiyor.
-	     app_tracking_transparency ekleyip izin isterseniz bu değer true
-	     olmalı ve Info.plist'e NSUserTrackingUsageDescription eklenmelidir. -->
+	<!-- İzleme (ATT) yapılıyor: kullanıcı izin verirse reklam kimliği
+	     (IDFA) üçüncü taraf reklamcılık için kullanılır. Bu değer true
+	     iken DÖRT şey birden doğru olmalı, yoksa inceleme reddedilir:
+	       1. pubspec.yaml → app_tracking_transparency
+	       2. Info.plist → NSUserTrackingUsageDescription
+	       3. Kod → AppTrackingTransparency.requestTrackingAuthorization
+	       4. App Store Connect gizlilik anketi → aynı türler için
+	          "izleme amaçlı: Evet"
+	     İzleme istemiyorsanız dördünü de geri alın ve bu değeri false
+	     yapın; ARADA KALMAK reddedilir (docs/REKLAM.md). -->
 	<key>NSPrivacyTracking</key>
-	<false/>
+	<true/>
 	<key>NSPrivacyTrackingDomains</key>
 	<array/>
 
@@ -37,7 +44,7 @@
 			<key>NSPrivacyCollectedDataTypeLinked</key>
 			<false/>
 			<key>NSPrivacyCollectedDataTypeTracking</key>
-			<false/>
+			<true/>
 			<key>NSPrivacyCollectedDataTypePurposes</key>
 			<array>
 				<string>NSPrivacyCollectedDataTypePurposeThirdPartyAdvertising</string>
@@ -49,7 +56,7 @@
 			<key>NSPrivacyCollectedDataTypeLinked</key>
 			<false/>
 			<key>NSPrivacyCollectedDataTypeTracking</key>
-			<false/>
+			<true/>
 			<key>NSPrivacyCollectedDataTypePurposes</key>
 			<array>
 				<string>NSPrivacyCollectedDataTypePurposeThirdPartyAdvertising</string>

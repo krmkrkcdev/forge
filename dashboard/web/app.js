@@ -356,6 +356,12 @@ function act(which) {
       }, () => stream('api/fix?' + q + '&apply=1', 'Düzeltmeler uygulanıyor'));
     case 'update':
       return stream('api/update?' + q, 'flutter pub get');
+    case 'analyze':
+      return stream('api/analyze?' + q, 'Statik analiz');
+    // Proje değil, makinedeki forge kurulumu yenilenir; path parametresi
+    // almaz.
+    case 'forge-reinstall':
+      return stream('api/forge-reinstall', 'forge yeniden kuruluyor');
     case 'server-deploy':
       return confirmThen({
         title: 'Sunucuya kur',
@@ -881,7 +887,7 @@ function renderGuide() {
       + gInfo('Backend gerekiyorsa', '"Backend ekle" kutusunu işaretle — FastAPI + PostgreSQL + fotoğraf saklama hazır gelir.'))}
 
     ${gPhase(3, 'Geliştir', null,
-      gInfo('Kodla ve dene', '<code>cd app && flutter run</code>. Paket ekleyince panelden 🔄 Güncelle.')
+      gInfo('Kodla ve dene', '<code>cd app && flutter run</code>. Paket ekleyince panelden 🔄 Güncelle, sonra 🧪 Analiz et — analiz hatası build turunun ortasında dakikalar sonra patlar.')
       + gAuto(rdGate('ios', 'Mağaza denetimi'), 'Doctor — iOS temiz mi')
       + gAuto(rdGate('android', 'Mağaza denetimi'), 'Doctor — Android temiz mi')
       + gInfo('Alışkanlık', 'Doctor\'ı sık çalıştır; engeli biriktirme — çoğunu 🩹 Düzeltmeleri uygula kapatır.'))}

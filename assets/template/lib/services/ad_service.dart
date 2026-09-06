@@ -1,7 +1,11 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
+import 'package:app_tracking_transparency/app_tracking_transparency.dart';
+// widgets.dart, foundation.dart'ı da dışa aktarır (debugPrint, ValueNotifier).
+// Buradaki fazlası WidgetsBinding: ATT diyaloğu uygulama ETKİN duruma
+// geçmeden gösterilemez, o yüzden yaşam döngüsüne bakmamız gerekiyor.
+import 'package:flutter/widgets.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 /// Reklam altyapısı — bütün uygulamalarda AYNI dosya.
@@ -139,6 +143,57 @@ class AdService {
     return ConsentInformation.instance.canRequestAds();
   }
 
+  // ------------------------------------------------- izleme izni (ATT)
+
+  /// Apple'ın izleme izni diyaloğunu gösterir (yalnızca iOS).
+  ///
+  /// **UMP onay formu bunun yerine geçmez.** Google'ın formu Google'ın
+  /// yayıncı politikası (GDPR/DMA) içindir; Apple ise reklam kimliğine
+  /// (IDFA) erişmek için KENDİ diyaloğunu şart koşar. Yalnızca UMP formunu
+  /// gösteren uygulama, Apple'ın gözünde "izleme izni isteyen özel ekran"
+  /// gösteriyordur ve **5.1.2(i)** ile reddedilir. Bu kural gerçek bir
+  /// redden doğdu; ayrıntısı docs/REKLAM.md içinde.
+  ///
+  /// İzin verilmezse hiçbir şey bozulmaz: reklamlar kişiselleştirilmemiş
+  /// olarak sunulmaya devam eder. Reklam hiçbir zaman uygulamanın çalışma
+  /// şartı değildir.
+  Future<void> _requestTrackingAuthorization() async {
+    if (!Platform.isIOS) return;
+
+    // Karar kullanıcı ömrü boyunca BİR KEZ verilir; verilmişse iOS diyaloğu
+    // bir daha göstermez, eski cevabı sessizce döndürür. Boşuna beklememek
+    // için önce mevcut duruma bakıyoruz.
+    final current = await AppTrackingTransparency.trackingAuthorizationStatus;
+    if (current != TrackingStatus.notDetermined) return;
+
+    await _waitUntilResumed();
+
+    final status = await AppTrackingTransparency.requestTrackingAuthorization();
+    debugPrint('ATT izni: $status');
+  }
+
+  /// Uygulama ETKİN (resumed) duruma geçene kadar bekler.
+  ///
+  /// iOS izin diyaloğunu yalnızca uygulama ön planda ve etkinken gösterir.
+  /// Açılışta, ilk kare çizilmeden istenen izin **diyalog hiç çıkmadan**
+  /// `notDetermined` ile geri döner ve bir daha sorulamaz. Hata mesajı
+  /// yoktur; yalnızca izin alınmamış olur — ve inceleme "izin istenmiyor"
+  /// diyerek reddeder. Bu yüzden bekleme kaldırılamaz.
+  ///
+  /// Süre sınırı var: uygulama arka planda açıldıysa (ör. bildirimle)
+  /// sonsuza kadar beklemek yerine vazgeçilir, izin bir sonraki açılışta
+  /// istenir.
+  Future<void> _waitUntilResumed() async {
+    final binding = WidgetsBinding.instance;
+    await binding.endOfFrame;
+
+    final deadline = DateTime.now().add(const Duration(seconds: 5));
+    while (binding.lifecycleState != AppLifecycleState.resumed &&
+        DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+  }
+
   // ------------------------------------------------------------- yaşam döngüsü
 
   bool _initialized = false;
@@ -153,8 +208,23 @@ class AdService {
     return _initializing ??= _init();
   }
 
+  /// Sıra üç adımdır ve DEĞİŞTİRİLEMEZ:
+  ///
+  /// 1. UMP onayı — AB/İngiltere için zorunlu; AdMob konsolunda ATT
+  ///    açıklayıcı mesajı tanımlıysa Google onu da burada gösterir.
+  /// 2. Apple'ın izleme izni (ATT) — açıklayıcı ekrandan SONRA gelmelidir,
+  ///    yoksa açıklama anlamsızlaşır; Apple'ın istediği de bu sıradır.
+  /// 3. SDK başlatma — izin durumu belli olmadan ilk reklam isteği giderse
+  ///    o istek IDFA'sız gider ve gelir kalıcı olarak düşer.
   Future<void> _init() async {
     final canRequestAds = await _gatherConsent();
+
+    // Onay sonucundan BAĞIMSIZ olarak istenir: diyalog kullanıcı ömrü
+    // boyunca bir kez çıkar ve App Store incelemesinin görmesi gereken
+    // ekran budur. Onay reddedildiğinde erken dönüp bunu atlamak, incelemede
+    // "izin hiç istenmiyor" olarak görünür.
+    await _requestTrackingAuthorization();
+
     if (!canRequestAds) {
       // Onay yok: SDK'yı başlatmanın anlamı yok, reklam sunulmayacak.
       _initializing = null;

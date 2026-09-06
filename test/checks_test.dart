@@ -330,6 +330,130 @@ void main() {
     });
   });
 
+  group('izleme izni (ATT)', () {
+    /// Reklam gösteren, UMP onayını koddan yürüten bir iOS projesi.
+    ///
+    /// Gerçek redde giden yapılandırma buydu: her şey yerinde, yalnızca
+    /// Apple'ın izin diyaloğu yok.
+    void writeAdProject({
+      bool att = false,
+      bool attCall = false,
+      bool? manifestTracking,
+    }) {
+      fixture.write(
+        'pubspec.yaml',
+        'name: denek\nversion: 1.0.0+1\n'
+        'dependencies:\n  google_mobile_ads: ^9.0.0\n'
+        '${att ? '  app_tracking_transparency: ^2.0.7\n' : ''}',
+      );
+      fixture.write(
+        'ios/Runner/Info.plist',
+        '<plist><dict>'
+        '<key>NSUserTrackingUsageDescription</key><string>x</string>'
+        '</dict></plist>',
+      );
+      fixture.write(
+        'lib/services/ad_service.dart',
+        'void f() {\n'
+        '  ConsentInformation.instance.canRequestAds();\n'
+        '${attCall ? '  AppTrackingTransparency.requestTrackingAuthorization();\n' : ''}'
+        '}\n',
+      );
+      if (manifestTracking != null) {
+        fixture.write(
+          'ios/Runner/PrivacyInfo.xcprivacy',
+          '<plist><dict>'
+          '<key>NSPrivacyTracking</key><$manifestTracking/>'
+          '<string>NSPrivacyCollectedDataTypeDeviceID</string>'
+          '</dict></plist>',
+        );
+      }
+    }
+
+    test('UMP formu var, ATT yoksa engel — 5.1.2(i) reddinin ta kendisi', () {
+      writeAdProject();
+
+      final finding = findingWithId(fixture.project, 'ios-att-never-requested');
+      expect(finding, isNotNull);
+      expect(finding!.severity, Severity.blocker);
+      expect(finding.platform, Platform.ios);
+    });
+
+    test('paket eklenmiş ama çağrı yoksa yine engel — tek bulguyla', () {
+      // "ATT ekledim" sanıp yeniden gönderilen sürüm aynı redde döner.
+      // İki kural birden bağırmaz: eksik olan şey çağrıdır, bulgu da onu
+      // söyler.
+      writeAdProject(att: true);
+
+      final finding =
+          findingWithId(fixture.project, 'ios-att-package-unused');
+      expect(finding, isNotNull);
+      expect(finding!.severity, Severity.blocker);
+      expect(
+        findingWithId(fixture.project, 'ios-att-never-requested'),
+        isNull,
+      );
+    });
+
+    test('paket ve çağrı birlikteyse sessiz kalır', () {
+      writeAdProject(att: true, attCall: true);
+
+      expect(
+        findingWithId(fixture.project, 'ios-att-never-requested'),
+        isNull,
+      );
+      expect(findingWithId(fixture.project, 'ios-att-package-unused'), isNull);
+    });
+
+    test('izin isteniyorken manifest false diyorsa engel', () {
+      writeAdProject(att: true, attCall: true, manifestTracking: false);
+
+      final finding =
+          findingWithId(fixture.project, 'privacy-manifest-tracking-false');
+      expect(finding, isNotNull);
+      expect(finding!.severity, Severity.blocker);
+    });
+
+    test('manifest true diyorken izin istenmiyorsa engel', () {
+      writeAdProject(manifestTracking: true);
+
+      expect(
+        findingWithId(fixture.project, 'privacy-manifest-tracking-true'),
+        isNotNull,
+      );
+    });
+
+    test('ikisi de aynı hikâyeyi anlatıyorsa sessiz kalır', () {
+      writeAdProject(att: true, attCall: true, manifestTracking: true);
+
+      expect(
+        findingWithId(fixture.project, 'privacy-manifest-tracking-true'),
+        isNull,
+      );
+      expect(
+        findingWithId(fixture.project, 'privacy-manifest-tracking-false'),
+        isNull,
+      );
+    });
+
+    test('reklam göstermeyen proje bu kuralların dışında', () {
+      fixture.write('ios/Runner/Info.plist', '<plist><dict></dict></plist>');
+      fixture.write(
+        'ios/Runner/PrivacyInfo.xcprivacy',
+        '<plist><dict><key>NSPrivacyTracking</key><false/></dict></plist>',
+      );
+
+      for (final id in [
+        'ios-att-never-requested',
+        'ios-att-package-unused',
+        'privacy-manifest-tracking-true',
+        'privacy-manifest-tracking-false',
+      ]) {
+        expect(findingWithId(fixture.project, id), isNull, reason: id);
+      }
+    });
+  });
+
   group('ios-no-development-team', () {
     test('iOS klasörü yoksa sessiz kalır', () {
       expect(findingWithId(fixture.project, 'ios-no-development-team'), isNull);
