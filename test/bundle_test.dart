@@ -37,7 +37,8 @@ void main() {
         expect(
           placed,
           contains(path),
-          reason: 'assets/template/$path hiçbir yere yazılmıyor. '
+          reason:
+              'assets/template/$path hiçbir yere yazılmıyor. '
               'ProjectScaffold.fileMap ya da spliced içine ekleyin.',
         );
       }
@@ -51,11 +52,33 @@ void main() {
         log: (_) {},
       );
       for (final source in scaffold.fileMap.keys) {
-        expect(templateFile(source), isNotNull, reason: source);
+        if (ProjectScaffold.binary.contains(source)) {
+          expect(templateBytes(source), isNotNull, reason: source);
+        } else {
+          expect(templateFile(source), isNotNull, reason: source);
+        }
       }
       for (final source in ProjectScaffold.spliced) {
         expect(templateFile(source), isNotNull, reason: source);
       }
+    });
+
+    test('ikili şablon bayt bayt korunur', () {
+      // PNG, UTF-8 olarak çözülemez; metin yolundan geçse ya patlar ya da
+      // sessizce bozulurdu. İmzayı ve boyutu diskteki kaynakla karşılaştır.
+      const logo = 'assets/splash/pikelabs.png';
+      final bytes = templateBytes(logo)!;
+      expect(bytes.take(4).toList(), [0x89, 0x50, 0x4E, 0x47]);
+      expect(bytes, File('assets/template/$logo').readAsBytesSync());
+      expect(
+        () => ProjectScaffold(
+          root: '/tmp/x',
+          appDir: '/tmp/x/app',
+          substitutions: const {},
+          log: (_) {},
+        ).render(logo),
+        throwsStateError,
+      );
     });
 
     test('yer tutucular dolduruluyor', () {

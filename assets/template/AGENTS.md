@@ -36,6 +36,12 @@ insana sorun.
    `lib/services/ad_service.dart` ve `lib/widgets/banner_ad_slot.dart` her
    uygulamada aynı dosyadır. Değiştirmeniz gerekiyorsa önce insana sorun —
    değişiklik bu uygulamaya değil, standarda yapılır.
+8. **Açılış ekranı marka standardıdır.** `lib/screens/splash_screen.dart` ve
+   `assets/splash/pikelabs.png` her uygulamada aynıdır: siyah zemin,
+   PikeLabs logosu, dokununca geçilir. Logo dosyası kırpılmaz, maskelenmez,
+   rengiyle oynanmaz; `flutter_native_splash` zemini de aynı siyah kalır,
+   yoksa açılışta renk sıçrar. Uygulamanın ilk ekranı `HomeScreen`'dir;
+   açılışı atlayıp `MaterialApp.home`'u değiştirmeyin.
 
 ## Dil ve üslup
 

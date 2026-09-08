@@ -33,33 +33,36 @@ class ProjectScaffold {
   /// dayansaydı, şablona yeni bir dosya eklendiğinde nereye gideceğini
   /// kestirmek gerekirdi.
   Map<String, String> get fileMap => {
-        'AGENTS.md': 'AGENTS.md',
-        'docs/REKLAM.md': 'docs/REKLAM.md',
-        'deploy.sh': '$_app/deploy.sh',
-        'Gemfile': '$_app/Gemfile',
-        'env.example': '$_app/.env.example',
-        'android/key.properties.example': '$_app/android/key.properties.example',
-        'android/fastlane/Appfile': '$_app/android/fastlane/Appfile',
-        'android/fastlane/Fastfile': '$_app/android/fastlane/Fastfile',
-        'android/fastlane/release_notes.txt.example':
-            '$_app/android/fastlane/release_notes.txt.example',
-        'ios/fastlane/Appfile': '$_app/ios/fastlane/Appfile',
-        'ios/fastlane/Fastfile': '$_app/ios/fastlane/Fastfile',
-        'ios/fastlane/Matchfile': '$_app/ios/fastlane/Matchfile',
-        'ios/fastlane/release_notes.txt.example':
-            '$_app/ios/fastlane/release_notes.txt.example',
-        'ios/PrivacyInfo.xcprivacy': '$_app/ios/Runner/PrivacyInfo.xcprivacy',
-        'lib/main.dart': '$_app/lib/main.dart',
-        'lib/theme/app_theme.dart': '$_app/lib/theme/app_theme.dart',
-        'lib/screens/home_screen.dart': '$_app/lib/screens/home_screen.dart',
-        'lib/services/ad_service.dart': '$_app/lib/services/ad_service.dart',
-        'lib/widgets/banner_ad_slot.dart': '$_app/lib/widgets/banner_ad_slot.dart',
-        // flutter create'in örnek testi silinir (silinen widget'lara bakar)
-        // ama yerine bir şey konmazsa `flutter test` boş dizinde 1 ile çıkar:
-        // AGENTS.md'deki doğrulama ve deploy.sh'ın kalite kontrolü daha ilk
-        // günden kırılır. Bu yüzden iskelet her zaman en az bir testle gelir.
-        'smoke_test.dart': '$_app/test/smoke_test.dart',
-      };
+    'AGENTS.md': 'AGENTS.md',
+    'docs/REKLAM.md': 'docs/REKLAM.md',
+    'deploy.sh': '$_app/deploy.sh',
+    'Gemfile': '$_app/Gemfile',
+    'env.example': '$_app/.env.example',
+    'android/key.properties.example': '$_app/android/key.properties.example',
+    'android/fastlane/Appfile': '$_app/android/fastlane/Appfile',
+    'android/fastlane/Fastfile': '$_app/android/fastlane/Fastfile',
+    'android/fastlane/release_notes.txt.example':
+        '$_app/android/fastlane/release_notes.txt.example',
+    'ios/fastlane/Appfile': '$_app/ios/fastlane/Appfile',
+    'ios/fastlane/Fastfile': '$_app/ios/fastlane/Fastfile',
+    'ios/fastlane/Matchfile': '$_app/ios/fastlane/Matchfile',
+    'ios/fastlane/release_notes.txt.example':
+        '$_app/ios/fastlane/release_notes.txt.example',
+    'ios/PrivacyInfo.xcprivacy': '$_app/ios/Runner/PrivacyInfo.xcprivacy',
+    'lib/main.dart': '$_app/lib/main.dart',
+    'lib/theme/app_theme.dart': '$_app/lib/theme/app_theme.dart',
+    'lib/screens/home_screen.dart': '$_app/lib/screens/home_screen.dart',
+    // Marka açılış ekranı: ekran + logo dosyası, her uygulamada AYNI.
+    'lib/screens/splash_screen.dart': '$_app/lib/screens/splash_screen.dart',
+    'assets/splash/pikelabs.png': '$_app/assets/splash/pikelabs.png',
+    'lib/services/ad_service.dart': '$_app/lib/services/ad_service.dart',
+    'lib/widgets/banner_ad_slot.dart': '$_app/lib/widgets/banner_ad_slot.dart',
+    // flutter create'in örnek testi silinir (silinen widget'lara bakar)
+    // ama yerine bir şey konmazsa `flutter test` boş dizinde 1 ile çıkar:
+    // AGENTS.md'deki doğrulama ve deploy.sh'ın kalite kontrolü daha ilk
+    // günden kırılır. Bu yüzden iskelet her zaman en az bir testle gelir.
+    'smoke_test.dart': '$_app/test/smoke_test.dart',
+  };
 
   /// Bu dosyalar kopyalanmaz; başka bir dosyanın içine karıştırılır.
   static const spliced = {
@@ -69,14 +72,25 @@ class ProjectScaffold {
     'android/signing_configs.gradle.kts',
   };
 
+  /// İkili dosyalar: yer tutucu aranmaz, bayt bayt kopyalanır.
+  ///
+  /// Metin olarak okunsalar UTF-8 çözümü ya patlar ya da baytları
+  /// sessizce bozar; ikisi de görüntüyü kullanılmaz kılar.
+  static const binary = {'assets/splash/pikelabs.png'};
+
   String get _app => p.relative(appDir, from: root);
 
   /// Şablondaki `{{ANAHTAR}}` yer tutucularını doldurur.
   String render(String templatePath) {
+    if (binary.contains(templatePath)) {
+      throw StateError('İkili şablon metin olarak işlenemez: $templatePath');
+    }
     var content = templateFile(templatePath);
     if (content == null) {
-      throw StateError('Şablon bulunamadı: $templatePath. '
-          'dart run tool/bundle_assets.dart çalıştırıldı mı?');
+      throw StateError(
+        'Şablon bulunamadı: $templatePath. '
+        'dart run tool/bundle_assets.dart çalıştırıldı mı?',
+      );
     }
     substitutions.forEach((key, value) {
       content = content!.replaceAll('{{$key}}', value);
@@ -87,7 +101,11 @@ class ProjectScaffold {
   /// Bütün şablon dosyalarını yerine yazar.
   void copyAll() {
     fileMap.forEach((source, target) {
-      write(target, render(source));
+      if (binary.contains(source)) {
+        writeBytes(target, templateBytes(source)!);
+      } else {
+        write(target, render(source));
+      }
     });
     // deploy.sh çalıştırılabilir olmalı; kopyalama izinleri taşımaz.
     _makeExecutable(p.join(root, '$_app/deploy.sh'));
@@ -115,13 +133,19 @@ class ProjectScaffold {
     log('  yazıldı  $relativeTarget');
   }
 
+  void writeBytes(String relativeTarget, List<int> bytes) {
+    final file = File(p.join(root, relativeTarget));
+    file.parent.createSync(recursive: true);
+    file.writeAsBytesSync(bytes);
+    log('  yazıldı  $relativeTarget');
+  }
+
   /// Var olan bir dosyanın sonuna ekler.
   void append(String relativeTarget, String content) {
     final file = File(p.join(root, relativeTarget));
     file.parent.createSync(recursive: true);
     final existing = file.existsSync() ? file.readAsStringSync() : '';
-    final separator =
-        existing.isEmpty || existing.endsWith('\n') ? '' : '\n';
+    final separator = existing.isEmpty || existing.endsWith('\n') ? '' : '\n';
     file.writeAsStringSync('$existing$separator$content');
     log('  eklendi  $relativeTarget');
   }

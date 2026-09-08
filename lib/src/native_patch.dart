@@ -66,8 +66,10 @@ PatchResult registerPrivacyManifest(String pbxproj) {
   const buildFileAnchor = '/* Begin PBXBuildFile section */\n';
   const fileRefAnchor = '/* Begin PBXFileReference section */\n';
   if (!content.contains(buildFileAnchor) || !content.contains(fileRefAnchor)) {
-    return PatchResult(pbxproj,
-        problem: 'project.pbxproj beklenen bölümleri içermiyor.');
+    return PatchResult(
+      pbxproj,
+      problem: 'project.pbxproj beklenen bölümleri içermiyor.',
+    );
   }
 
   content = content.replaceFirst(
@@ -89,7 +91,10 @@ PatchResult registerPrivacyManifest(String pbxproj) {
     r'([0-9A-F]{24} /\* Runner \*/ = \{\s*\n\s*isa = PBXGroup;\s*\n\s*children = \(\n)',
   ).firstMatch(content);
   if (group == null) {
-    return PatchResult(pbxproj, problem: 'Xcode projesinde Runner grubu bulunamadı.');
+    return PatchResult(
+      pbxproj,
+      problem: 'Xcode projesinde Runner grubu bulunamadı.',
+    );
   }
   content = content.replaceRange(
     group.end,
@@ -109,8 +114,10 @@ PatchResult registerPrivacyManifest(String pbxproj) {
     }
   }
   if (target == null) {
-    return PatchResult(pbxproj,
-        problem: 'Xcode projesinde Copy Bundle Resources fazı bulunamadı.');
+    return PatchResult(
+      pbxproj,
+      problem: 'Xcode projesinde Copy Bundle Resources fazı bulunamadı.',
+    );
   }
   content = content.replaceRange(
     target.end,
@@ -142,8 +149,10 @@ PatchResult patchAndroidManifest(
   if (!content.contains('android.permission.INTERNET')) {
     final index = content.indexOf('    <application');
     if (index == -1) {
-      return PatchResult(manifest,
-          problem: 'AndroidManifest.xml beklenen yapıda değil.');
+      return PatchResult(
+        manifest,
+        problem: 'AndroidManifest.xml beklenen yapıda değil.',
+      );
     }
     // Flutter bu izni yalnızca debug/profile derlemelerine kendiliğinden
     // ekler; ana manifestte yoksa ağ SADECE sürüm derlemesinde sessizce
@@ -166,8 +175,10 @@ PatchResult patchAndroidManifest(
   if (admobAppId != null && !content.contains('gms.ads.APPLICATION_ID')) {
     final index = content.indexOf('    </application>');
     if (index == -1) {
-      return PatchResult(content,
-          problem: 'AndroidManifest.xml içinde </application> bulunamadı.');
+      return PatchResult(
+        content,
+        problem: 'AndroidManifest.xml içinde </application> bulunamadı.',
+      );
     }
     content = content.replaceRange(
       index,
@@ -204,8 +215,10 @@ PatchResult patchBuildGradle(
   // Eklentilerden sonra, android bloğundan önce.
   final androidBlock = content.indexOf('\nandroid {');
   if (androidBlock == -1) {
-    return PatchResult(gradle,
-        problem: 'build.gradle.kts içinde android bloğu bulunamadı.');
+    return PatchResult(
+      gradle,
+      problem: 'build.gradle.kts içinde android bloğu bulunamadı.',
+    );
   }
   content = content.replaceRange(
     androidBlock + 1,
@@ -215,12 +228,12 @@ PatchResult patchBuildGradle(
 
   // flutter create'in ürettiği buildTypes bloğu debug anahtarını kullanır;
   // Play Console bu paketi reddeder. Blok bütünüyle değiştirilir.
-  final defaultBuildTypes = RegExp(
-    r'\n {4}buildTypes \{\n[\s\S]*?\n {4}\}\n',
-  );
+  final defaultBuildTypes = RegExp(r'\n {4}buildTypes \{\n[\s\S]*?\n {4}\}\n');
   if (!defaultBuildTypes.hasMatch(content)) {
-    return PatchResult(content,
-        problem: 'build.gradle.kts içinde buildTypes bloğu bulunamadı.');
+    return PatchResult(
+      content,
+      problem: 'build.gradle.kts içinde buildTypes bloğu bulunamadı.',
+    );
   }
   content = content.replaceFirst(defaultBuildTypes, '\n$signingConfigs');
 
@@ -238,8 +251,10 @@ PatchResult patchBuildGradle(
 PatchResult patchAndroidApplicationId(String gradle, String id) {
   final pattern = RegExp(r'''(applicationId\s*=?\s*)["'][^"']+["']''');
   if (!pattern.hasMatch(gradle)) {
-    return PatchResult(gradle,
-        problem: 'build.gradle içinde applicationId bulunamadı.');
+    return PatchResult(
+      gradle,
+      problem: 'build.gradle içinde applicationId bulunamadı.',
+    );
   }
   return PatchResult(
     gradle.replaceFirstMapped(pattern, (m) => '${m.group(1)}"$id"'),
@@ -275,7 +290,53 @@ String patchPubspec(
     content = '$content\n${_iconConfig(projectName)}';
   }
 
-  return content;
+  return declareSplashAssets(content);
+}
+
+/// Açılış ekranı logosunun dizinini `flutter.assets` altına yazar.
+///
+/// Şablon `assets/splash/pikelabs.png` dosyasını kopyalar ama pubspec'te
+/// beyan edilmeyen dosya pakete girmez: ekran boş siyah kalır ve
+/// `errorBuilder` yüzünden hata da vermez — sessiz bir kırılma. Bu yüzden
+/// beyan kopyalamanın ayrılmaz parçasıdır.
+///
+/// `flutter create`'in ürettiği dosyada `assets:` yorum satırıdır; gerçek
+/// bir `assets:` listesi varsa dizin ona eklenir, yoksa
+/// `uses-material-design` satırının altına yeni liste açılır.
+String declareSplashAssets(String pubspec) {
+  const dir = 'assets/splash/';
+  if (RegExp(
+    r'^\s+-\s*' + RegExp.escape(dir) + r'\s*$',
+    multiLine: true,
+  ).hasMatch(pubspec)) {
+    return pubspec;
+  }
+  const entry =
+      '    # Açılış ekranı logosu; lib/screens/splash_screen.dart '
+      'kullanır.\n'
+      '    - $dir';
+
+  final list = RegExp(
+    r'^  assets:[ \t]*$',
+    multiLine: true,
+  ).firstMatch(pubspec);
+  if (list != null) {
+    return pubspec.replaceRange(list.end, list.end, '\n$entry');
+  }
+  final anchor = RegExp(
+    r'^  uses-material-design:.*$',
+    multiLine: true,
+  ).firstMatch(pubspec);
+  if (anchor != null) {
+    return pubspec.replaceRange(
+      anchor.end,
+      anchor.end,
+      '\n\n  assets:\n$entry',
+    );
+  }
+  // flutter: bölümü hiç yoksa sona eklenir.
+  return '$pubspec\nflutter:\n  uses-material-design: true\n\n'
+      '  assets:\n$entry\n';
 }
 
 String _iconConfig(String projectName) => '''
@@ -292,13 +353,18 @@ flutter_launcher_icons:
 
 # Açılış ekranı; yeniden üretmek için:
 #   dart run flutter_native_splash:create
+#
+# Renk, lib/screens/splash_screen.dart'ın zeminiyle AYNI olmak zorunda (saf
+# siyah). İşletim sisteminin gösterdiği bu kare ile Flutter'ın ilk karesi
+# arasında göz kırpması kadar bir an vardır; iki zemin farklıysa o an renk
+# sıçraması olarak görünür ve uygulama "iki kez açılıyor" gibi durur.
 flutter_native_splash:
-  color: "#2F6FED"
+  color: "#000000"
   image: assets/icon/icon_foreground.png
   android: true
   ios: true
   android_12:
-    color: "#2F6FED"
+    color: "#000000"
     image: assets/icon/icon_foreground.png
 ''';
 
@@ -315,8 +381,10 @@ PatchResult setAdmobAppIdIos(String plist, String appId) {
     r'(<key>GADApplicationIdentifier</key>\s*<string>)([^<]*)(</string>)',
   );
   if (!pattern.hasMatch(plist)) {
-    return PatchResult(plist,
-        problem: 'Info.plist içinde GADApplicationIdentifier bulunamadı.');
+    return PatchResult(
+      plist,
+      problem: 'Info.plist içinde GADApplicationIdentifier bulunamadı.',
+    );
   }
   return PatchResult(
     plist.replaceFirstMapped(pattern, (m) => '${m[1]}$appId${m[3]}'),
@@ -332,8 +400,10 @@ PatchResult setAdmobAppIdAndroid(String manifest, String appId) {
     r'android:value=")([^"]*)(")',
   );
   if (!pattern.hasMatch(manifest)) {
-    return PatchResult(manifest,
-        problem: 'AndroidManifest.xml içinde AdMob APPLICATION_ID bulunamadı.');
+    return PatchResult(
+      manifest,
+      problem: 'AndroidManifest.xml içinde AdMob APPLICATION_ID bulunamadı.',
+    );
   }
   return PatchResult(
     manifest.replaceFirstMapped(pattern, (m) => '${m[1]}$appId${m[3]}'),
@@ -342,15 +412,14 @@ PatchResult setAdmobAppIdAndroid(String manifest, String appId) {
 
 /// Info.plist / AndroidManifest içindeki mevcut AdMob uygulama kimliği; yoksa
 /// `null`. Paneldeki alanın "şu an ne yazıyor" değerini göstermek için.
-String? readAdmobAppIdIos(String plist) =>
-    RegExp(r'<key>GADApplicationIdentifier</key>\s*<string>([^<]*)</string>')
-        .firstMatch(plist)
-        ?.group(1);
+String? readAdmobAppIdIos(String plist) => RegExp(
+  r'<key>GADApplicationIdentifier</key>\s*<string>([^<]*)</string>',
+).firstMatch(plist)?.group(1);
 
 String? readAdmobAppIdAndroid(String manifest) => RegExp(
-      r'android:name="com\.google\.android\.gms\.ads\.APPLICATION_ID"\s+'
-      r'android:value="([^"]*)"',
-    ).firstMatch(manifest)?.group(1);
+  r'android:name="com\.google\.android\.gms\.ads\.APPLICATION_ID"\s+'
+  r'android:value="([^"]*)"',
+).firstMatch(manifest)?.group(1);
 
 /// Xcode projesine imzalama takımını yazar.
 ///
@@ -374,7 +443,8 @@ PatchResult setDevelopmentTeam(String pbxproj, String teamId) {
   if (!pbxproj.contains(marker)) {
     return PatchResult(
       pbxproj,
-      problem: 'project.pbxproj içinde Runner hedefi bulunamadı; '
+      problem:
+          'project.pbxproj içinde Runner hedefi bulunamadı; '
           'imzalama takımını Xcode\'dan seçin.',
     );
   }

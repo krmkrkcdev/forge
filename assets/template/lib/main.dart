@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
-import 'screens/home_screen.dart';
+import 'screens/splash_screen.dart';
 import 'services/ad_service.dart';
 import 'theme/app_theme.dart';
 
@@ -47,7 +47,8 @@ class {{APP_CLASS}} extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      home: const HomeScreen(),
+      // Marka açılışı; süresi dolunca ya da dokununca HomeScreen'e geçer.
+      home: const SplashScreen(),
     );
   }
 }

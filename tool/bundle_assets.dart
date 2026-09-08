@@ -31,8 +31,10 @@ void main(List<String> args) {
   if (check) {
     final current = file.existsSync() ? file.readAsStringSync() : '';
     if (current != generated) {
-      stderr.writeln('❌ $_output güncel değil. Çalıştırın: '
-          'dart run tool/bundle_assets.dart');
+      stderr.writeln(
+        '❌ $_output güncel değil. Çalıştırın: '
+        'dart run tool/bundle_assets.dart',
+      );
       exit(1);
     }
     stdout.writeln('✅ $_output güncel.');
@@ -41,8 +43,10 @@ void main(List<String> args) {
 
   file.parent.createSync(recursive: true);
   file.writeAsStringSync(generated);
-  stdout.writeln('✅ ${templateFilePaths().length} şablon dosyası gömüldü → '
-      '$_output');
+  stdout.writeln(
+    '✅ ${templateFilePaths().length} şablon dosyası gömüldü → '
+    '$_output',
+  );
 }
 
 /// Gömülecek dosyaların göreli yolları, sıralı.
@@ -51,13 +55,14 @@ void main(List<String> args) {
 /// üretilen dosya sebepsiz yere değişir ve fark (diff) gürültüsü olur.
 List<String> templateFilePaths() {
   final root = Directory(_assetRoot);
-  final paths = root
-      .listSync(recursive: true)
-      .whereType<File>()
-      .map((f) => p.relative(f.path, from: _assetRoot))
-      .where((path) => !path.endsWith('.DS_Store'))
-      .toList()
-    ..sort();
+  final paths =
+      root
+          .listSync(recursive: true)
+          .whereType<File>()
+          .map((f) => p.relative(f.path, from: _assetRoot))
+          .where((path) => !path.endsWith('.DS_Store'))
+          .toList()
+        ..sort();
   return paths;
 }
 
@@ -99,11 +104,21 @@ String generateBundle() {
     ..writeln('/// Şablondaki dosya yolları.')
     ..writeln('Iterable<String> get templatePaths => _encoded.keys;')
     ..writeln()
-    ..writeln('/// Şablon dosyasının içeriği; yoksa `null`.')
-    ..writeln('String? templateFile(String path) {')
+    ..writeln('/// Şablon dosyasının ham baytları; yoksa `null`.')
+    ..writeln('///')
+    ..writeln('/// Görsel gibi ikili dosyalar için; metin dosyaları için')
+    ..writeln('/// [templateFile] kullanın.')
+    ..writeln('List<int>? templateBytes(String path) {')
     ..writeln('  final encoded = _encoded[path];')
     ..writeln('  if (encoded == null) return null;')
-    ..writeln('  return utf8.decode(base64.decode(encoded));')
+    ..writeln('  return base64.decode(encoded);')
+    ..writeln('}')
+    ..writeln()
+    ..writeln('/// Şablon dosyasının metni; yoksa `null`.')
+    ..writeln('String? templateFile(String path) {')
+    ..writeln('  final bytes = templateBytes(path);')
+    ..writeln('  if (bytes == null) return null;')
+    ..writeln('  return utf8.decode(bytes);')
     ..writeln('}');
 
   return buffer.toString();

@@ -58,9 +58,18 @@ not_defteri/
     .env.example
     lib/services/ad_service.dart      ← her uygulamada AYNI
     lib/widgets/banner_ad_slot.dart   ← her uygulamada AYNI
+    lib/screens/splash_screen.dart    ← marka açılışı, her uygulamada AYNI
+    assets/splash/pikelabs.png        ← açılış logosu (pubspec'te beyanlı)
     ios/Runner/PrivacyInfo.xcprivacy  (Xcode projesine kayıtlı)
     android/key.properties.example
 ```
+
+Açılış ekranı bubble_2048 / jumptoup / pinicorn ile birebir aynıdır: siyah
+zeminde PikeLabs logosu, dokununca geçilir, ardından `HomeScreen`. İşletim
+sisteminin gösterdiği `flutter_native_splash` karesi de aynı siyahtır ki iki
+kare arasında renk sıçramasın. Logo ikili bir dosya olduğu için şablon
+paketinde `ProjectScaffold.binary` listesindedir: yer tutucu aranmaz, bayt
+bayt kopyalanır.
 
 Üretilen projede `forge doctor` **sıfır engelle** çıkar. Geriye kalan
 uyarılar bilinçli olarak sizin kararınız olan şeylerdir: imzalama anahtarı,

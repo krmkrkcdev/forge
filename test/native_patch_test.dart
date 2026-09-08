@@ -96,7 +96,10 @@ void main() {
   _developmentTeamTests();
   group('patchInfoPlist', () {
     test('anahtarları son </dict> önüne ekler', () {
-      final result = patchInfoPlist(_infoPlist, '\t<key>GADApplicationIdentifier</key>\n\t<string>x</string>\n');
+      final result = patchInfoPlist(
+        _infoPlist,
+        '\t<key>GADApplicationIdentifier</key>\n\t<string>x</string>\n',
+      );
 
       expect(result.ok, isTrue);
       expect(result.content, contains('GADApplicationIdentifier'));
@@ -105,8 +108,14 @@ void main() {
     });
 
     test('zaten uygulanmışsa dosyaya dokunmaz', () {
-      final once = patchInfoPlist(_infoPlist, '\t<key>GADApplicationIdentifier</key>\n').content;
-      final twice = patchInfoPlist(once, '\t<key>GADApplicationIdentifier</key>\n').content;
+      final once = patchInfoPlist(
+        _infoPlist,
+        '\t<key>GADApplicationIdentifier</key>\n',
+      ).content;
+      final twice = patchInfoPlist(
+        once,
+        '\t<key>GADApplicationIdentifier</key>\n',
+      ).content;
 
       expect(twice, equals(once));
     });
@@ -149,15 +158,22 @@ void main() {
 
       String section(String name) {
         final start = result.indexOf('/* Begin $name section */');
-        return result.substring(start, result.indexOf('/* End $name section */'));
+        return result.substring(
+          start,
+          result.indexOf('/* End $name section */'),
+        );
       }
 
       expect(section('PBXBuildFile'), contains('PrivacyInfo.xcprivacy'));
-      expect(section('PBXFileReference'),
-          contains('lastKnownFileType = text.plist.xml'));
+      expect(
+        section('PBXFileReference'),
+        contains('lastKnownFileType = text.plist.xml'),
+      );
       expect(section('PBXGroup'), contains('PrivacyInfo.xcprivacy'));
-      expect(section('PBXResourcesBuildPhase'),
-          contains('PrivacyInfo.xcprivacy in Resources'));
+      expect(
+        section('PBXResourcesBuildPhase'),
+        contains('PrivacyInfo.xcprivacy in Resources'),
+      );
     });
 
     test('zaten kayıtlıysa ikinci kez eklemez', () {
@@ -204,15 +220,19 @@ void main() {
     });
 
     test('AdMob kimliği verilmezse meta-data eklenmez', () {
-      final content =
-          patchAndroidManifest(_androidManifest, appLabel: 'Denek').content;
+      final content = patchAndroidManifest(
+        _androidManifest,
+        appLabel: 'Denek',
+      ).content;
 
       expect(content, isNot(contains('gms.ads.APPLICATION_ID')));
     });
 
     test('iki kez uygulanınca izin yinelenmez', () {
-      final once =
-          patchAndroidManifest(_androidManifest, appLabel: 'Denek').content;
+      final once = patchAndroidManifest(
+        _androidManifest,
+        appLabel: 'Denek',
+      ).content;
       final twice = patchAndroidManifest(once, appLabel: 'Denek').content;
 
       expect('uses-permission'.allMatches(twice), hasLength(1));
@@ -220,8 +240,10 @@ void main() {
   });
 
   group('patchBuildGradle', () {
-    const prelude = 'val hasReleaseKeystore = rootProject.file("key.properties").exists()';
-    const configs = '    buildTypes {\n        release {\n            signingConfig = null\n        }\n    }\n';
+    const prelude =
+        'val hasReleaseKeystore = rootProject.file("key.properties").exists()';
+    const configs =
+        '    buildTypes {\n        release {\n            signingConfig = null\n        }\n    }\n';
 
     test('debug imzalamasını kaldırır', () {
       final result = patchBuildGradle(
@@ -231,7 +253,10 @@ void main() {
       );
 
       expect(result.ok, isTrue);
-      expect(result.content, isNot(contains('signingConfigs.getByName("debug")')));
+      expect(
+        result.content,
+        isNot(contains('signingConfigs.getByName("debug")')),
+      );
       expect(result.content, contains('key.properties'));
       expect(result.content, contains('import java.util.Properties'));
     });
@@ -267,7 +292,11 @@ void main() {
       ).content;
 
       expect(
-        patchBuildGradle(once, prelude: prelude, signingConfigs: configs).content,
+        patchBuildGradle(
+          once,
+          prelude: prelude,
+          signingConfigs: configs,
+        ).content,
         equals(once),
       );
     });
@@ -281,8 +310,10 @@ void main() {
       );
 
       expect(result.ok, isTrue);
-      expect(result.content,
-          contains('applicationId = "com.devposs.yaziTara"'));
+      expect(
+        result.content,
+        contains('applicationId = "com.devposs.yaziTara"'),
+      );
       expect(result.content, isNot(contains('yazi_tara')));
     });
 
@@ -338,15 +369,72 @@ environment:
     });
 
     test('ikon ve açılış ekranı yapılandırmasını ekler', () {
-      final result =
-          patchPubspec(pubspec, description: 'x', projectName: 'denek');
+      final result = patchPubspec(
+        pubspec,
+        description: 'x',
+        projectName: 'denek',
+      );
 
       expect(result, contains('flutter_launcher_icons:'));
       expect(result, contains('flutter_native_splash:'));
     });
 
+    test('açılış ekranı zemini splash_screen.dart ile aynı: siyah', () {
+      final result = patchPubspec(
+        pubspec,
+        description: 'x',
+        projectName: 'denek',
+      );
+      final splash = result.substring(result.indexOf('flutter_native_splash:'));
+      expect(splash, contains('color: "#000000"'));
+      expect(splash, isNot(contains('#2F6FED')));
+    });
+
+    test('açılış logosu dizinini flutter.assets altına yazar', () {
+      const created =
+          '$pubspec\n'
+          'flutter:\n'
+          '  uses-material-design: true\n'
+          '\n'
+          '  # assets:\n'
+          '  #   - images/a_dot_burr.jpeg\n';
+      final result = patchPubspec(
+        created,
+        description: 'x',
+        projectName: 'denek',
+      );
+
+      expect(result, contains('  assets:\n'));
+      expect(result, contains('    - assets/splash/\n'));
+      // Beyan flutter: bölümünün içinde, ikon yapılandırmasından ÖNCE olmalı;
+      // dosya sonuna düşerse ayrı bir üst düzey anahtar sanılır.
+      expect(
+        result.indexOf('- assets/splash/'),
+        lessThan(result.indexOf('flutter_launcher_icons:')),
+      );
+      // Yorumdaki örnek assets satırı gerçek liste sanılmamalı.
+      expect(result, contains('  # assets:\n'));
+    });
+
+    test('var olan assets listesine ekler, ikinci kez eklemez', () {
+      const withList =
+          'flutter:\n'
+          '  uses-material-design: true\n'
+          '  assets:\n'
+          '    - assets/audio/\n';
+      final once = declareSplashAssets(withList);
+      expect(once, contains('  assets:\n    # Açılış'));
+      expect(once, contains('    - assets/splash/\n    - assets/audio/\n'));
+      expect('assets:'.allMatches(once), hasLength(1));
+      expect(declareSplashAssets(once), equals(once));
+    });
+
     test('var olan ikon yapılandırmasını ikinci kez eklemez', () {
-      final once = patchPubspec(pubspec, description: 'x', projectName: 'denek');
+      final once = patchPubspec(
+        pubspec,
+        description: 'x',
+        projectName: 'denek',
+      );
       final twice = patchPubspec(once, description: 'x', projectName: 'denek');
 
       expect('flutter_launcher_icons:'.allMatches(twice), hasLength(1));
@@ -354,11 +442,13 @@ environment:
   });
 
   group('AdMob uygulama kimliği', () {
-    const plist = '<dict>\n'
+    const plist =
+        '<dict>\n'
         '\t<key>GADApplicationIdentifier</key>\n'
         '\t<string>ca-app-pub-3940256099942544~1458002511</string>\n'
         '</dict>';
-    const manifest = '    <application android:label="x">\n'
+    const manifest =
+        '    <application android:label="x">\n'
         '        <meta-data\n'
         '            android:name="com.google.android.gms.ads.APPLICATION_ID"\n'
         '            android:value="ca-app-pub-3940256099942544~3347511713" />\n'
@@ -380,13 +470,21 @@ environment:
 
     test('anahtar yoksa problem bildirir', () {
       expect(setAdmobAppIdIos('<dict></dict>', 'x').ok, isFalse);
-      expect(setAdmobAppIdAndroid('<application></application>', 'x').ok, isFalse);
+      expect(
+        setAdmobAppIdAndroid('<application></application>', 'x').ok,
+        isFalse,
+      );
     });
 
     test('mevcut değeri okur', () {
-      expect(readAdmobAppIdIos(plist), 'ca-app-pub-3940256099942544~1458002511');
-      expect(readAdmobAppIdAndroid(manifest),
-          'ca-app-pub-3940256099942544~3347511713');
+      expect(
+        readAdmobAppIdIos(plist),
+        'ca-app-pub-3940256099942544~1458002511',
+      );
+      expect(
+        readAdmobAppIdAndroid(manifest),
+        'ca-app-pub-3940256099942544~3347511713',
+      );
     });
   });
 }
@@ -451,7 +549,10 @@ void _developmentTeamTests() {
     test('var olan takıma dokunmaz', () {
       // Bu alan kullanıcının kararı; üzerine yazmak sessizce imzalamayı
       // bozardı.
-      final once = setDevelopmentTeam(_pbxprojWithTargets, 'AAAAAAAAAA').content;
+      final once = setDevelopmentTeam(
+        _pbxprojWithTargets,
+        'AAAAAAAAAA',
+      ).content;
       final twice = setDevelopmentTeam(once, 'BBBBBBBBBB').content;
       expect(twice, once);
       expect(twice, isNot(contains('BBBBBBBBBB')));
