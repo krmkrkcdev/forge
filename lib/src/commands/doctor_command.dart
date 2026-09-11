@@ -21,6 +21,14 @@ class DoctorCommand extends Command<int> {
         'strict',
         help: 'Uyarıları da hata sayar (CI için).',
         negatable: false,
+      )
+      ..addOption(
+        'platform',
+        help: 'Yalnızca bu platformun bulgularını dikkate al.\n'
+            'Bulgular yine de hepsi basılır; çıkış kodunu yalnızca\n'
+            'seçilen platforma ait olanlar belirler.',
+        allowed: ['ios', 'android', 'all'],
+        defaultsTo: 'all',
       );
   }
 
@@ -69,13 +77,34 @@ class DoctorCommand extends Command<int> {
     }
 
     final all = [...findings, ...environment];
-    final blockers = all.where((f) => f.severity == Severity.blocker).length;
-    final warnings = all.where((f) => f.severity == Severity.warning).length;
+
+    // Çıkış kodunu belirleyen küme, BASILAN kümeden dar olabilir.
+    //
+    // Yalnızca iOS yayınlayan bir proje, Android tarafındaki eksikler
+    // yüzünden yayın yapamaz hâle geliyordu: `deploy.sh ios release`
+    // üretim yayınında uyarıları da engel saydığı için, kurulmamış bir
+    // Android imza anahtarı iOS sürümünü durduruyordu. Bulgular yine de
+    // basılıyor — Android'in eksik olduğunu görmek faydalı, iOS'u
+    // durdurması değil.
+    final hedef = argResults!['platform'] as String;
+    final sayilan = switch (hedef) {
+      'ios' => all.where((f) => f.platform != Platform.android),
+      'android' => all.where((f) => f.platform != Platform.ios),
+      _ => all,
+    }.toList();
+
+    final blockers = sayilan.where((f) => f.severity == Severity.blocker).length;
+    final warnings = sayilan.where((f) => f.severity == Severity.warning).length;
     final autoFixable = all.where((f) => f.autoFixable).length;
 
     stdout.writeln('─' * 64);
+    final kapsam = hedef == 'all' ? '' : ' ($hedef için sayılan)';
     stdout.writeln('$blockers engel, $warnings uyarı, '
-        '${all.length - blockers - warnings} bilgi.');
+        '${sayilan.length - blockers - warnings} bilgi$kapsam.');
+    if (hedef != 'all' && sayilan.length < all.length) {
+      stdout.writeln('${all.length - sayilan.length} bulgu başka platforma '
+          'ait, sayılmadı.');
+    }
     if (autoFixable > 0) {
       stdout.writeln('$autoFixable tanesi otomatik düzeltilebilir:  forge fix');
     }
