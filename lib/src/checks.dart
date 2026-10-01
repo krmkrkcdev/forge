@@ -14,6 +14,8 @@ const List<Check> allChecks = [
   _versionFormat,
   _androidReleaseSigning,
   _androidInternetPermission,
+  _androidFastlaneOpenTestingTrack,
+  _androidFastlaneCwdRelativeBuildPath,
   _iosExportCompliance,
   _iosPrivacyManifest,
   _iosPrivacyManifestRegistered,
@@ -173,6 +175,113 @@ Finding? _cleartextTrafficInRelease(FlutterProject p) {
     );
   }
   return null;
+}
+
+const _androidFastfile = 'android/fastlane/Fastfile';
+
+/// Fastfile'ın yorum satırları dışındaki satırları.
+///
+/// Kurallar yorumlara bakmamalı: şablon, tuzağı anlatırken tuzağın kendisini
+/// (`beta`, `Dir.pwd`) yorumda anıyor.
+List<String> _fastfileCodeLines(String content) => content
+    .split('\n')
+    .where((line) => !line.trimLeft().startsWith('#'))
+    .toList();
+
+/// Testçilere giden lane'in Play'de AÇIK teste yüklemesi.
+///
+/// zoddrun (2026-10-01): `deploy.sh android beta` paketi `track: "beta"` ile
+/// yüklüyordu. Play'de `beta` AÇIK test kanalıdır — mağaza sayfasından herkes
+/// katılabilir. Kişisel geliştirici hesabının "12 testçi, 14 gün" şartı ise
+/// yalnızca KAPALI testi sayar; kapalı testin API kimliği `alpha`dır
+/// (Play Console'da "Kapalı test - Alpha"). Paketler haftalarca yüklenip
+/// sayaç hiç ilerlemiyordu.
+///
+/// Uyarı, engel değil: açık test bilinçli bir tercih olabilir. O durumda
+/// Fastfile'a `# forge:acik-test` yazılır ve kural susar — üretim yayını
+/// `--strict` ile çalıştığı için aksi hâlde her seferinde yayını durdururdu.
+Finding? _androidFastlaneOpenTestingTrack(FlutterProject p) {
+  final content = p.read(_androidFastfile);
+  if (content == null) return null;
+  if (content.contains('forge:acik-test')) return null;
+
+  final beta = RegExp(r'''\btrack\s*(?::|=>)\s*["']beta["']''');
+  if (!_fastfileCodeLines(content).any(beta.hasMatch)) return null;
+
+  return const Finding(
+    id: 'android-fastlane-open-testing-track',
+    severity: Severity.warning,
+    platform: Platform.android,
+    title: 'Fastfile testçilere AÇIK test kanalına ("beta") yüklüyor',
+    why: 'Google Play\'de "beta" kanalı açık testtir: mağaza sayfasından '
+        'herkes katılabilir. Kişisel geliştirici hesabının üretime çıkmak '
+        'için istediği "en az 12 testçi, 14 gün" şartı yalnızca KAPALI testi '
+        'sayar; açık teste yüklenen sürümler bu sayacı hiç ilerletmez. Kapalı '
+        'testin API kimliği "alpha"dır (Play Console\'da "Kapalı test - Alpha").',
+    fix: '$_androidFastfile içinde testçi lane\'inin kanalını değiştirin:\n'
+        '  upload_to_play_store(track: "alpha", ...)\n'
+        'Açık test bilinçliyse Fastfile\'a şu yorumu ekleyin, uyarı susar:\n'
+        '  # forge:acik-test',
+  );
+}
+
+/// Fastfile'da çalışma dizinine (cwd) göre çözülen derleme çıktısı yolu.
+///
+/// fastlane lane gövdesini ve `before_all`'u android/fastlane/ içinde,
+/// eylemleri (`upload_to_play_store`) ise android/ içinde çalıştırır. Aynı
+/// "../build/..." eylem için Flutter kökündeki build/'e, Ruby kodu için
+/// android/build/'e çıkar. zoddrun'da (2026-10-01) `before_all` içindeki
+/// `File.expand_path(AAB_PATH, Dir.pwd)` denetimi bu yüzden her çalıştırmada
+/// "App Bundle bulunamadı" ile düşüyordu. Çözüm yolu `__dir__`e (Fastfile'ın
+/// kendi klasörü) göre mutlaklaştırmak.
+///
+/// Yalnızca derleme çıktısına bakar: `File.join(Dir.pwd, "release_notes.txt")`
+/// gibi fastlane/ içindeki dosyalar lane gövdesinde doğru çözülür.
+Finding? _androidFastlaneCwdRelativeBuildPath(FlutterProject p) {
+  final content = p.read(_androidFastfile);
+  if (content == null) return null;
+  final lines = _fastfileCodeLines(content);
+
+  // "../" ile başlayıp build/'e uzanan göreli yol taşıyan sabitler.
+  final relativeBuild = RegExp(r'''["'](?:\.\./)+build/''');
+  final constants = <String>{
+    for (final line in lines)
+      if (!line.contains('__dir__') && relativeBuild.hasMatch(line))
+        ?RegExp(r'^\s*([A-Z][A-Z0-9_]*)\s*=').firstMatch(line)?.group(1),
+  };
+
+  // Yolu Ruby'nin kendisine (cwd'ye göre) çözdüren çağrılar.
+  final fileOp = RegExp(
+    r'Dir\.pwd|File\.(?:exist\?|file\?|expand_path|read|open|size)|Dir\.glob|Dir\[',
+  );
+  String? offending;
+  for (final line in lines) {
+    if (line.contains('__dir__') || !fileOp.hasMatch(line)) continue;
+    final usesPath = relativeBuild.hasMatch(line) ||
+        constants.any((c) => RegExp('\\b$c\\b').hasMatch(line));
+    if (usesPath) {
+      offending = line.trim();
+      break;
+    }
+  }
+  if (offending == null) return null;
+
+  return Finding(
+    id: 'android-fastlane-cwd-relative-path',
+    severity: Severity.warning,
+    platform: Platform.android,
+    title: 'Fastfile derleme çıktısını çalışma dizinine göre arıyor',
+    why: 'fastlane lane gövdesini ve before_all\'u android/fastlane/ içinde, '
+        'eylemleri (upload_to_play_store) android/ içinde çalıştırır. Aynı '
+        '"../build/..." yolu Ruby kodunda android/build\'e, eylemde Flutter '
+        'kökündeki build\'e çıkar; "App Bundle bulunamadı" denetimi paket '
+        'yerindeyken bile her çalıştırmada düşer.\n'
+        '  $offending',
+    fix: 'Yolu Fastfile\'ın kendi klasörüne göre mutlaklaştırın:\n'
+        '  AAB_PATH = File.expand_path(\n'
+        '    "../../build/app/outputs/bundle/release/app-release.aab", __dir__)\n'
+        've File.exist?(AAB_PATH) ile doğrudan denetleyin.',
+  );
 }
 
 // --------------------------------------------------------------------- iOS

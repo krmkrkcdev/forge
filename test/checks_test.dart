@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:forge/src/checks.dart';
 import 'package:forge/src/finding.dart';
 import 'package:forge/src/project.dart';
+import 'package:forge/src/templates/bundle.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -499,5 +500,116 @@ void main() {
 
       expect(findingWithId(fixture.project, 'ios-no-development-team'), isNull);
     });
+  });
+
+  group('android-fastlane-open-testing-track', () {
+    const id = 'android-fastlane-open-testing-track';
+
+    test('Fastfile yoksa sessiz kalır', () {
+      expect(findingWithId(fixture.project, id), isNull);
+    });
+
+    test('track: "beta" açık test uyarısı verir', () {
+      fixture.write('android/fastlane/Fastfile',
+          'lane :beta do\n  upload_to_play_store(track: "beta", aab: AAB_PATH)\nend\n');
+
+      final finding = findingWithId(fixture.project, id);
+      expect(finding, isNotNull);
+      // Açık test bilinçli olabilir; yayını engellememeli.
+      expect(finding!.severity, Severity.warning);
+      expect(finding.platform, Platform.android);
+      expect(finding.fix, contains('track: "alpha"'));
+    });
+
+    test("tek tırnak ve => yazımını da yakalar", () {
+      fixture.write('android/fastlane/Fastfile',
+          "upload_to_play_store(track: 'beta')\n");
+      expect(findingWithId(fixture.project, id), isNotNull);
+
+      fixture.write('android/fastlane/Fastfile',
+          'upload_to_play_store(:track => "beta")\n');
+      expect(findingWithId(fixture.project, id), isNotNull);
+    });
+
+    test('kapalı test (alpha) ve production sessiz kalır', () {
+      fixture.write('android/fastlane/Fastfile',
+          'TEST_TRACK = "alpha".freeze\n'
+          'upload_to_play_store(track: TEST_TRACK)\n'
+          'upload_to_play_store(track: "production", release_status: "draft")\n');
+      expect(findingWithId(fixture.project, id), isNull);
+    });
+
+    test('yorumdaki anlatıma takılmaz', () {
+      fixture.write('android/fastlane/Fastfile',
+          '# Eskiden track: "beta" yazıyordu; o AÇIK testti.\n'
+          'upload_to_play_store(track: "alpha")\n');
+      expect(findingWithId(fixture.project, id), isNull);
+    });
+
+    test('# forge:acik-test ile bilinçli açık test susturulur', () {
+      fixture.write('android/fastlane/Fastfile',
+          '# forge:acik-test\nupload_to_play_store(track: "beta")\n');
+      expect(findingWithId(fixture.project, id), isNull);
+    });
+  });
+
+  group('android-fastlane-cwd-relative-path', () {
+    const id = 'android-fastlane-cwd-relative-path';
+
+    test('Dir.pwd ile çözülen sabit build yolunu yakalar (zoddrun)', () {
+      fixture.write('android/fastlane/Fastfile',
+          'AAB_PATH = "../build/app/outputs/bundle/release/app-release.aab".freeze\n'
+          'before_all do\n'
+          '  unless File.exist?(File.expand_path(AAB_PATH, Dir.pwd))\n'
+          '    UI.user_error!("App Bundle bulunamadı")\n'
+          '  end\n'
+          'end\n'
+          'upload_to_play_store(aab: AAB_PATH)\n');
+
+      final finding = findingWithId(fixture.project, id);
+      expect(finding, isNotNull);
+      expect(finding!.severity, Severity.warning);
+      expect(finding.why, contains('File.expand_path(AAB_PATH, Dir.pwd)'));
+      expect(finding.fix, contains('__dir__'));
+    });
+
+    test('satır içi göreli build yolunu da yakalar', () {
+      fixture.write('android/fastlane/Fastfile',
+          'aab = File.expand_path("../build/app/outputs/bundle/release/app-release.aab", Dir.pwd)\n');
+      expect(findingWithId(fixture.project, id), isNotNull);
+    });
+
+    test('__dir__ ile mutlaklaştırılmış yol sessiz kalır', () {
+      fixture.write('android/fastlane/Fastfile',
+          'AAB_PATH = File.expand_path("../../build/app/outputs/bundle/release/app-release.aab", __dir__).freeze\n'
+          'before_all do\n'
+          '  UI.user_error!("yok") unless File.exist?(AAB_PATH)\n'
+          'end\n');
+      expect(findingWithId(fixture.project, id), isNull);
+    });
+
+    test('fastlane/ içindeki dosyalar için Dir.pwd sorun değil', () {
+      // Lane gövdesi android/fastlane/ içinde çalışır; release_notes.txt
+      // ve metadata/ orada olduğu için doğru çözülür.
+      fixture.write('android/fastlane/Fastfile',
+          'notes_path = File.join(Dir.pwd, "release_notes.txt")\n'
+          'dir = File.join(Dir.pwd, "metadata", "android", lang, "changelogs")\n'
+          'upload_to_play_store(aab: "../build/app/outputs/bundle/release/app-release.aab")\n');
+      expect(findingWithId(fixture.project, id), isNull);
+    });
+  });
+
+  test('forge new şablonunun Fastfile\'ı kendi kurallarına takılmaz', () {
+    // Şablon iki tuzağı da yorumda anlatıyor; kurallar yorumu bulgu
+    // saymamalı, şablon da tuzağa geri düşmemeli.
+    fixture.write(
+        'android/fastlane/Fastfile', templateFile('android/fastlane/Fastfile')!);
+    final fastfile = fixture.project.read('android/fastlane/Fastfile')!;
+    expect(fastfile, contains('TEST_TRACK = "alpha"'));
+
+    expect(findingWithId(fixture.project, 'android-fastlane-open-testing-track'),
+        isNull);
+    expect(findingWithId(fixture.project, 'android-fastlane-cwd-relative-path'),
+        isNull);
   });
 }
