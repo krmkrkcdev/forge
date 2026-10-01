@@ -79,7 +79,7 @@ Yayın akışı `deploy.sh` ile yürür ve şu sırayla çalışır:
 
 ```bash
 ./deploy.sh ios beta        # TestFlight
-./deploy.sh android beta    # Play Store beta
+./deploy.sh android beta    # Play kapalı test (alpha)
 ./deploy.sh all release     # ikisi birden, üretim
 ```
 

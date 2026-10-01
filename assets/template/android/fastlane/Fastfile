@@ -1,13 +1,25 @@
 default_platform(:android)
 
-# Fastlane'in çalışma dizini android/ klasörüdür, bu yüzden "../build/..."
-# Flutter projesinin kökündeki build çıktısına denk gelir.
-AAB_PATH = "../build/app/outputs/bundle/release/app-release.aab".freeze
+# Yol __dir__'e (bu dosyanın klasörü, android/fastlane) göre mutlaklaştırılır.
+# Göreli yazmak tuzaktır: fastlane lane gövdesini ve before_all'u
+# android/fastlane/ içinde, eylemleri (upload_to_play_store) ise android/
+# içinde çalıştırır. Aynı "../build/..." biri için android/build'e, öteki
+# için Flutter kökündeki build'e çıkar ve "App Bundle bulunamadı" denetimi
+# paket yerindeyken bile her çalıştırmada düşer.
+AAB_PATH = File.expand_path("../../build/app/outputs/bundle/release/app-release.aab", __dir__).freeze
+
+# Testçilerin aldığı kanal: Play Console'da "Kapalı test - Alpha", API'deki
+# kimliği `alpha`. `beta` DEĞİL: `beta` AÇIK test kanalıdır, mağaza
+# sayfasından herkes katılabilir. Kişisel geliştirici hesabının üretime
+# çıkmak için istediği "12 testçi, 14 gün" şartı da yalnızca kapalı testi
+# sayar. Lane adı `beta` kalır: deploy.sh'ın iOS ile ortak sözlüğü
+# (`beta` = testçilere, `release` = mağazaya), Play kanalıyla ilgisi yok.
+TEST_TRACK = "alpha".freeze
 
 platform :android do
 
   before_all do
-    unless File.exist?(File.expand_path(AAB_PATH, Dir.pwd))
+    unless File.exist?(AAB_PATH)
       UI.user_error!("App Bundle bulunamadı: #{AAB_PATH}\nÖnce `flutter build appbundle --release` çalıştırın (deploy.sh bunu yapar).")
     end
   end
@@ -28,17 +40,17 @@ platform :android do
     UI.message("Sürüm notu hazırlandı: #{lang}/changelogs/#{version_code}.txt")
   end
 
-  desc "Play Store Beta kanalına hızlı yükleme"
+  desc "Kapalı test (Alpha) kanalına yükle — Play incelemesinden sonra testçilere gider"
   lane :beta do
     write_changelog
 
     if ENV["DEPLOY_DRY_RUN"] == "true"
-      UI.important("DRY-RUN: App Bundle hazır, Play Store'a yükleme atlandı.")
+      UI.important("DRY-RUN: App Bundle hazır, Play Store'a yükleme atlandı (kanal: #{TEST_TRACK}).")
       next
     end
 
     upload_to_play_store(
-      track: "beta",
+      track: TEST_TRACK,
       aab: AAB_PATH,
       release_status: "completed",
       skip_upload_apk: true,

@@ -7,7 +7,7 @@ set -euo pipefail
 #  Kullanım:
 #    ./deploy.sh ios beta        -> TestFlight'a yükle
 #    ./deploy.sh ios release     -> App Store'a yükle + incelemeye gönder
-#    ./deploy.sh android beta    -> Play Store Beta kanalına yükle
+#    ./deploy.sh android beta    -> Play kapalı test (Alpha) kanalına yükle
 #    ./deploy.sh android release -> Play Store Production'a yükle
 #    ./deploy.sh all beta        -> İkisini birden (beta)
 #    ./deploy.sh all release     -> İkisini birden (release)
